@@ -7060,6 +7060,11 @@ document.addEventListener("DOMContentLoaded", () => {
       let sectorsHTML = "";
       let tabsHTML = "";
 
+      const totalJams = (expressway_data.sectors || []).reduce(
+        (sum, sector) => sum + (sector.jammed_count || 0),
+        0
+      );
+
       for (let i = 0; i < expressway_data.sectors.length; i++) {
         let sector = expressway_data.sectors[i];
         let isActive = i === 0 ? "active" : "";
@@ -7093,7 +7098,7 @@ document.addEventListener("DOMContentLoaded", () => {
       expresswaysHTML += `
         <div class="exp-card">
           <div class="exp-header">${expressway}</div>
-          <div class="exp-total-jams"> ⚠️ Total Jams: 0 </div>
+          <div class="exp-total-jams"> ⚠️ Total Jams: ${totalJams} </div>
           <div class="tab-bar">${tabsHTML}</div>
           <div class="sector-container">
             ${sectorsHTML}
@@ -7106,19 +7111,34 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Helper to show/hide tabs
-  function switchSector(btn, roadCode, sectorName) {
-    // Deactivate all buttons in this card
-    const card = btn.closest('.exp-card');
-    card.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+document.addEventListener("click", function (e) {
+  const btn = e.target.closest(".analytics-tab-btn");
+  if (!btn) return;
 
-    // Hide all content in this card
-    card.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  const card = btn.closest(".exp-card");
+  if (!card) return;
 
-    // Activate clicked
-    btn.classList.add('active');
-    card.querySelector(`#content-${roadCode}-${sectorName}`).classList.add('active');
+  const expressway = btn.dataset.expressway;
+  const sector = btn.dataset.sector;
+
+  card.querySelectorAll(".analytics-tab-btn").forEach(b => {
+    b.classList.remove("active");
+  });
+
+  card.querySelectorAll(".analytics-sector").forEach(panel => {
+    panel.classList.remove("active");
+  });
+
+  btn.classList.add("active");
+
+  const targetPanel = card.querySelector(
+    `.analytics-sector[data-expressway-panel="${expressway}"][data-sector-panel="${sector}"]`
+  );
+
+  if (targetPanel) {
+    targetPanel.classList.add("active");
   }
-  window.switchSector = switchSector;
+});
 
 
 
@@ -7192,6 +7212,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Start Incident Hotspots Section
   async function refreshHotspotsDashboard() {
     const container = document.getElementById("hotspot-grid");
+
     try {
       console.log("Fetching hotspots...");
       const res = await window.fastAuthFetch("/api/ml/hotspots");
@@ -7201,7 +7222,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const response = await res.json();
       const data = response.data;
 
-      if (!data || !Array.isArray(data)) {
+      if (!data || !Array.isArray(data) || data.length === 0) {
         container.innerHTML = "No safety data available.";
         return;
       }
@@ -7209,27 +7230,40 @@ document.addEventListener("DOMContentLoaded", () => {
       let hotspotsHTML = "";
 
       data.forEach(spot => {
-        const isHighRisk = (spot.danger_score || 0) > 13;
-        const dangerClass = isHighRisk ? "status-jammed" : "status-warning";
-        const dangerLabel = isHighRisk ? "High Risk Zone" : "Moderate Risk";
+        const score = Number(spot.danger_score || 0);
+        const riskIncidents = Number(spot.risk_incidents || 0);
+        const accidents = Number(spot.accidents || 0);
+        const breakdowns = Number(spot.breakdowns || 0);
+        const avgDuration = Number(spot.avg_duration_min || 0);
+
+        let dangerLabel = "Moderate Risk";
+        if (score >= 20) dangerLabel = "High Risk Zone";
+        else if (score >= 15) dangerLabel = "Elevated Risk";
 
         hotspotsHTML += `
-          <div class="exp-card hotspot-card">
-              <div class="exp-header">
-                  ${spot.road_name}
-              </div>
-              <div style="padding: 12px; flex-grow: 1;">
-                  <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 8px;">
-                    ${spot.unique_incidents} Incidents (${dangerLabel})
-                  </div>
-                  <div class="stat-line">⚠️ Accidents: ${spot.accidents}</div>
-                  <div class="stat-line">🔧 Breakdowns: ${spot.breakdowns}</div>
-              </div>
-              <div>
-                  Avg Clearance: <strong>${Math.round(spot.avg_duration)} mins</strong>
-              </div>
+        <div class="exp-card hotspot-card">
+          <div class="exp-header">
+            ${spot.road_name || "Unknown Road"}
           </div>
-        `;
+
+          <div style="padding: 12px; flex-grow: 1;">
+            <div style="font-weight: bold; font-size: 0.95rem; margin-bottom: 8px;">
+              ${riskIncidents} Risk Incidents (${dangerLabel})
+            </div>
+
+            <div class="stat-line">⚠️ Accidents: ${accidents}</div>
+            <div class="stat-line">🔧 Breakdowns: ${breakdowns}</div>
+
+            <div class="stat-line" style="margin-top: 8px; font-size: 0.82rem; color: #475569;">
+              Frequent accident / breakdown activity. Drive carefully in this area.
+            </div>
+          </div>
+
+          <div style="padding: 0 12px 12px; font-size: 0.85rem;">
+            Avg Clearance: <strong>${Math.round(avgDuration)} mins</strong>
+          </div>
+        </div>
+      `;
       });
 
       container.innerHTML = hotspotsHTML;
