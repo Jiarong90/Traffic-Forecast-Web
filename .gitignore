@@ -1,0 +1,35 @@
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+**/node_modules/
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Env / secrets
+.env
+.env.*
+**/.env
+**/.env.*
+
+# IDE
+.vscode/
+.idea/
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+
+# Build/cache
+.cache/
+dist/
+build/
+
+desktop.ini
