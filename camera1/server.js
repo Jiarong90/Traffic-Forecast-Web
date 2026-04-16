@@ -12,7 +12,7 @@ const config = require('./config');
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use('/ui2', express.static(path.join(__dirname, '..', 'UI 2')));
+app.use('/ui2', express.static(path.join(__dirname, 'UI 2')));
 
 const SIGNUP_CODE_TTL_MIN = 10;
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/fyp_demo';
