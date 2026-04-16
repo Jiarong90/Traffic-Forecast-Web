@@ -7111,34 +7111,34 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Helper to show/hide tabs
-document.addEventListener("click", function (e) {
-  const btn = e.target.closest(".analytics-tab-btn");
-  if (!btn) return;
+  document.addEventListener("click", function (e) {
+    const btn = e.target.closest(".analytics-tab-btn");
+    if (!btn) return;
 
-  const card = btn.closest(".exp-card");
-  if (!card) return;
+    const card = btn.closest(".exp-card");
+    if (!card) return;
 
-  const expressway = btn.dataset.expressway;
-  const sector = btn.dataset.sector;
+    const expressway = btn.dataset.expressway;
+    const sector = btn.dataset.sector;
 
-  card.querySelectorAll(".analytics-tab-btn").forEach(b => {
-    b.classList.remove("active");
+    card.querySelectorAll(".analytics-tab-btn").forEach(b => {
+      b.classList.remove("active");
+    });
+
+    card.querySelectorAll(".analytics-sector").forEach(panel => {
+      panel.classList.remove("active");
+    });
+
+    btn.classList.add("active");
+
+    const targetPanel = card.querySelector(
+      `.analytics-sector[data-expressway-panel="${expressway}"][data-sector-panel="${sector}"]`
+    );
+
+    if (targetPanel) {
+      targetPanel.classList.add("active");
+    }
   });
-
-  card.querySelectorAll(".analytics-sector").forEach(panel => {
-    panel.classList.remove("active");
-  });
-
-  btn.classList.add("active");
-
-  const targetPanel = card.querySelector(
-    `.analytics-sector[data-expressway-panel="${expressway}"][data-sector-panel="${sector}"]`
-  );
-
-  if (targetPanel) {
-    targetPanel.classList.add("active");
-  }
-});
 
 
 
@@ -7865,7 +7865,12 @@ document.addEventListener("click", function (e) {
             </div>
           </div>
         `
-        : "";
+        : `
+        <div class="incident-ml-affected-roads">
+          <div class="incident-ml-affected-roads-title">AFFECTED ROADS</div>
+          <div class="incident-ml-no-roads">No roads affected</div>
+        </div>
+      `;
 
       body.innerHTML = `
             <div class="incident-ml-card">
