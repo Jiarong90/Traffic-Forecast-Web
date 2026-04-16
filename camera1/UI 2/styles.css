@@ -2780,7 +2780,6 @@ body {
 .tab-bar {
     display: flex;
     gap: 10px;
-    border-bottom: 1px solid #e2e8f0;
     margin-bottom: 10px;
     background: none;
     border-top: none;
