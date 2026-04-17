@@ -1760,12 +1760,22 @@ document.addEventListener("DOMContentLoaded", () => {
     historicalPrecision: "66%",
     habitRouteChatContext: {},
     habitRouteJams: {},
+    activePopup: null,
     selectedJamPinID: null,
     habitRouteSelectionContext: null,
     currSelectedRoute: null,
+    currMatchInfo: null,
     alternateRouteContext: null,
     habitPlanMode: "now",
     habitPlanDatetime: null,
+    currentRouteIntel: null,
+    journeyActive: null,
+    // -- admin states
+    adminModalOpen: false,
+    adminRecordingActive: false,
+    adminReplayList: [],
+    selectedReplayId: null,
+    // -- end admin states
     // End Habit routes
     liveLayer: null,
     liveIncidentLayer: null,
@@ -5700,7 +5710,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Helper functions for Habit Routes
   // For loading analysis results into the analysis panel
-  function renderHabitPanelResult(route, summary, mode, extra = {}) {
+  function renderHabitPanelResult(route, summary, mode, intel = null, extra = {}) {
     const panel = document.getElementById("habit-plan-results");
     const helper = document.getElementById("habit-plan-helper");
     if (!panel) return;
@@ -5714,6 +5724,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const fuelPrice = getFuelCostForHabit(route.distance_m);
 
+    let healthHtml = "";
+    if (intel && intel.summary) {
+      const s = intel.summary;
+      healthHtml = `
+            <div style="padding-bottom: 10px; background: #f8fafc;>
+                <div style="font-size: 10px; font-weight: 800; color: #64748b; margin-bottom: 5px; text-transform: uppercase;"></div>
+                <div style="display: flex; flex-direction: column; gap: 4px; font-size: 11px;">
+                    <span>🚨 Incidents: <b>${s.total_incidents}</b></span>
+                    <span>🌧️ Weather: <b>${s.is_raining_anywhere ? 'Rainy Regions' : 'Clear Skies'}</b></span>
+                    <span>⚠️ Hotspots: <b>${s.total_hotspots} detected</b></span>
+                </div>
+            </div>
+        `;
+    }
+
+    const simButton = `
+    <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+      <button id="sim-control-btn" onclick="startJourneySimulation()" 
+              style="width: 100%; padding: 12px; background: #2563eb; color: white; border: none; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s;">
+        START JOURNEY
+      </button>
+      <div id="sim-status-clock" style="display: none; margin-top: 8px; font-family: monospace; font-size: 10px; color: #64748b; text-align: center;">
+        SIM TIME: <span id="sim-clock-val">00:00</span>
+      </div>
+    </div>
+    `;
+
 
     if (mode === "now") {
       panel.innerHTML = `
@@ -5722,7 +5759,9 @@ document.addEventListener("DOMContentLoaded", () => {
         Live ETA: ${summary.curr_eta} min<br>
         T+15 ETA: ${summary.predicted_eta} min<br>
         ${summary.large_changes?.length ? `Jam: ${summary.large_changes[0].road_name}` : ""}
+        ${healthHtml}
         ${fuelPrice}
+        ${simButton}
       </div>
     `;
     }
@@ -5892,9 +5931,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const settingsPanel = card.querySelector(".habit-route-settings");
 
 
-
+      // On loading a route
       card.querySelector(".habit-load-btn").addEventListener("click", async () => {
 
+        if (state.journeyActive) {
+          stopJourneySimulation();
+        }
 
         // Once a route is loaded, show the analysis panel
         document.getElementById('habit-plan-selected-wrap').style.display = 'block';
@@ -5908,8 +5950,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
           const result = await drawHabitRouteOnMap(route);
 
-          if (result && result.summary) {
-            renderHabitPanelResult(route, result.summary, "now");
+          try {
+            const intelRes = await window.fastAuthFetch(`/api/ml/route-intel`, {
+              method: "POST",
+              body: JSON.stringify({ link_ids: route.link_ids })
+            });
+            const intelData = await intelRes.json()
+            console.log(intelData);
+
+            state.currentRouteIntel = intelData.details;
+
+            if (result && result.summary) {
+              renderHabitPanelResult(route, result.summary, "now", intelData);
+            }
+          } catch (err) {
+            console.error("Failed to retrieve intel", err);
+            if (result && result.summary) {
+              renderHabitPanelResult(route, result.summary, "now");
+            }
           }
         }
         else if (mode === "leave") {
@@ -6408,40 +6466,13 @@ document.addEventListener("DOMContentLoaded", () => {
           const midLon = (coords[j][1] + coords[j + 1][1]) / 2;
 
           // Pick the message based on the trigger
-          const alertTitle = isJam ? "Jam" : "Drop";
-          const alertDesc = isJam
-            ? "Jammed segment."
-            : `Predicted drop by ${bandChange} speedband.`;
 
-          // Create the Red Pin Icon
-          const jamIcon = L.divIcon({
-            html: `
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#ef4444"/>
-                <circle cx="12" cy="9" r="3" fill="white"/>
-            </svg>`,
-            className: 'jam-pin-icon',
-            iconSize: [30, 30],
-            iconAnchor: [15, 30]
-          });
+          // Caller Helper function to draw map pins
+          const jamMarker = createBaseJamMarker(midLat, midLon, matchData.road_name, j, isJam, matchData.prediction);
+          // Add it to the Map Layer
+          jamMarker.addTo(state.habitRoutePolylineLayer);
 
-          const jamMarker = L.marker([midLat, midLon], { icon: jamIcon }).addTo(state.habitRoutePolylineLayer);
-
-          // Bind the exploration popup
-          jamMarker.bindPopup(`
-            <div style="font-family: 'Inter', sans-serif; padding: 5px; min-width: 160px;">
-                <div style="font-weight: 800; color: #ef4444; font-size: 13px; margin-bottom: 2px;">${alertTitle}</div>
-                <div style="font-size: 11px; color: #64748b; margin-bottom: 8px;">${alertDesc}</div>
-                
-                <div style="border-top: 1px solid #f1f5f9; padding-top: 8px;">
-                    <button onclick="simulateReroute(${matchData.link_id}, ${j})" 
-                            style="width: 100%; background: #3b82f6; color: white; border: none; padding: 6px; border-radius: 4px; font-size: 10px; font-weight: 700; cursor: pointer;">
-                        Reroute from here
-                    </button>
-                </div>
-            </div>
-        `);
-
+          // Increment the jam count
           num_jams += 1;
 
           jamMarker.on("click", () => {
@@ -6502,13 +6533,52 @@ document.addEventListener("DOMContentLoaded", () => {
       to: to,
       predicted_eta: data.summary.predicted_eta,
       num_jams: num_jams,
-      route_jam_pins: route_jam_pins
+      route_jam_pins: route_jam_pins,
+      intelligence: {
+        total_incidents: state.currentRouteIntelSummary?.total_incidents || 0,
+        weather: state.currentRouteIntelSummary?.is_raining_anywhere ? "Rainy" : "Clear",
+        hotspot_count: state.currentRouteIntelSummary?.total_hotspots || 0,
+        risk_level: (state.currentRouteIntelSummary?.total_hotspots > 20) ? "High" : "Normal"
+      }
     }
 
     state.currSelectedRoute = route;
+    state.currMatchInfo = data.match_info
     return data;
   }
   // --- END Draw Habit Route ---
+
+  function createBaseJamMarker(lat, lon, roadName, pinIndex, isJam, p) {
+    const title = isJam ? "Jam" : "Slowdown";
+    const color = "#ef4444";
+
+    const icon = L.divIcon({
+      html: `
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="${color}"/>
+                <circle cx="12" cy="9" r="3" fill="white"/>
+            </svg>`,
+      className: 'jam-pin-icon',
+      iconSize: [30, 30],
+      iconAnchor: [15, 30]
+    });
+
+    const marker = L.marker([lat, lon], { icon: icon });
+
+    marker.bindPopup(`
+        <div style="font-family: sans-serif; padding: 5px; min-width: 150px;">
+            <b style="color: ${color};">${title}</b><br>
+            <small>${roadName}</small><br>
+            <hr style="margin: 5px 0; border-top: 1px solid #eee;">
+            <button onclick="simulateReroute(${p.link_id}, ${pinIndex})" 
+                    style="width: 100%; background: #3b82f6; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                Reroute
+            </button>
+        </div>
+    `);
+
+    return marker;
+  }
 
   // Update Habit Route settings
   async function saveHabitRouteSettings(routeId, card) {
@@ -7713,6 +7783,387 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("Guest visibility check bypassed.");
   }
 
+  // ADMIN TOOL SECTION FOR RECORD AND REPLAY
+  document.getElementById("admin-tools-btn")?.addEventListener("click", () => {
+    const modal = document.getElementById("admin-tools-modal");
+    modal?.classList.toggle("hidden");
+  });
+
+  // DRAGGABLE MODAL
+  (function enableAdminDrag() {
+    const modal = document.getElementById("admin-tools-modal");
+    const header = document.getElementById("admin-tools-header");
+
+    if (!modal || !header) return;
+
+    let isDragging = false;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    header.addEventListener("mousedown", (e) => {
+      isDragging = true;
+
+      const rect = modal.getBoundingClientRect();
+      offsetX = e.clientX - rect.left;
+      offsetY = e.clientY - rect.top;
+
+      // switch to left/top positioning (avoid right-based conflicts)
+      modal.style.right = "auto";
+      modal.style.left = rect.left + "px";
+      modal.style.top = rect.top + "px";
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (!isDragging) return;
+
+      modal.style.left = (e.clientX - offsetX) + "px";
+      modal.style.top = (e.clientY - offsetY) + "px";
+    });
+
+    document.addEventListener("mouseup", () => {
+      isDragging = false;
+    });
+  })();
+
+  // Start Recording 
+  document.getElementById("admin-start-recording-btn").addEventListener("click", async () => {
+    const route = state.currSelectedRoute;
+
+    if (!route || !Array.isArray(route.link_ids) || !route.link_ids.length) {
+      return;
+    }
+
+    const res = await window.fastAuthFetch("/api/replay/start", {
+      method: "POST",
+      body: JSON.stringify({
+        route_id: route.id || null,
+        route_name: route.route_name || "Unnnamed Route",
+        link_ids: route.link_ids
+      })
+    });
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      return;
+    }
+
+    document.getElementById("admin-recording-status").textContent = "Recording..";
+  })
+  // End Start Recording
+
+  // Handle Stop Recording
+  document.getElementById("admin-stop-recording-btn").addEventListener("click", async () => {
+    const route = state.currSelectedRoute;
+
+    if (!route) {
+      return;
+    }
+
+    const res = await window.fastAuthFetch("/api/replay/stop", {
+      method: "POST",
+      body: JSON.stringify({
+        route_name: route.route_name || "Unnamed route"
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      return;
+    }
+
+    document.getElementById("admin-recording-status").textContent = "Idle";
+  });
+  // End Handle Stop Recording
+
+  // END ADMIN TOOL SECTION
+
+  // HANDLE START JOURNEY
+
+  const BAND_TO_KMH = { 1: 7, 2: 15, 3: 25, 4: 35, 5: 45, 6: 55, 7: 65, 8: 85 };
+
+  // Calculates distance in Kilometers between two [lat, lon] points
+  function getDistanceKm(coord1, coord2) {
+    const [lat1, lon1] = coord1;
+    const [lat2, lon2] = coord2;
+    const R = 6371; // Radius of the earth in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+
+
+  let simInterval = null;
+  let simMarker = null;
+  let lastRedrawIndex = -1;
+  async function startJourneySimulation() {
+    const route = state.currSelectedRoute;
+    if (!route || !route.coords) {
+      return;
+    }
+    state.journeyActive = true;
+    const hud = document.getElementById("journey-hud");
+    if (hud) {
+      hud.classList.remove("hidden");
+    }
+
+    if (state.habitRoutePolylineLayer) {
+      state.habitRoutePolylineLayer.clearLayers();
+    }
+
+    let coords = route.coords;
+    let matchInfo = state.currMatchInfo || state.currSelectedRoute.match_info
+    let segmentMatches = matchInfo.segment_matches || [];
+
+    if (simMarker) {
+      state.plannerMap.removeLayer(simMarker);
+    }
+
+
+    const btn = document.getElementById('sim-control-btn');
+    if (btn) {
+      btn.style.background = '#ef4444';
+      btn.textContent = "STOP SIMULATION";
+      btn.setAttribute('onclick', 'stopJourneySimulation()');
+    }
+
+    const carIcon = L.divIcon({
+      html: `<div style="width:14px; height:14px; background:#ef4444; border:2px solid white; border-radius:50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`,
+      className: 'sim-car',
+      iconSize: [14, 14],
+      iconAnchor: [7, 7]
+    });
+    simMarker = L.marker(coords[0], { icon: carIcon }).addTo(state.plannerMap);
+
+    let currentIndex = 0;
+    let accumulatedMins = 0;
+    let isFetching = false;
+
+    simInterval = setInterval(async () => {
+      if (currentIndex >= coords.length - 1) {
+        clearInterval(simInterval);
+        return;
+      }
+
+      const oldCoord = coords[currentIndex];
+
+      currentIndex += 1;
+      const newCoord = coords[currentIndex];
+
+      simMarker.setLatLng(newCoord);
+      // state.plannerMap.panTo(newCoord, { animate: true, duration: 0.5 });
+
+      const distKm = getDistanceKm(oldCoord, newCoord);
+
+      const currentMatch = segmentMatches[currentIndex]
+      const band = (currentMatch && currentMatch.prediction) ? currentMatch.prediction.current_val : 5;
+      const speedKmh = BAND_TO_KMH[band] || 45;
+
+      const hopMins = (distKm / speedKmh) * 60;
+      accumulatedMins += hopMins;
+
+      updateColorsAhead(coords, segmentMatches, currentIndex);
+      if (accumulatedMins >= 5 && !isFetching) {
+        isFetching = true;
+
+        const remainingCoords = coords.slice(currentIndex);
+
+        try {
+          const res = await window.fastAuthFetch("/api/ml/habit-routes/analyze", {
+            method: "POST",
+            body: JSON.stringify({ coords_json: remainingCoords })
+          });
+
+          if (res.ok) {
+            const freshData = await res.json();
+
+            accumulatedMins = 0;
+            const freshMatches = freshData.match_info.segment_matches;
+            segmentMatches.splice(currentIndex, freshMatches.length, ...freshMatches);
+
+            updateColorsAhead(coords, segmentMatches, currentIndex);
+          }
+        } catch (err) {
+          console.error("Failed")
+        } finally {
+          isFetching = false;
+        }
+      }
+    }, 300);
+  }
+  window.startJourneySimulation = startJourneySimulation
+
+  function updateColorsAhead(coords, segmentMatches, currentIndex) {
+    if (!state.habitRoutePolylineLayer) return;
+
+    // if (state.plannerMap.hasLayer(state.activePopup)) {
+    //   return false;
+    // }
+    if (Math.abs(currentIndex - lastRedrawIndex) < 5 && lastRedrawIndex !== -1) {
+      return;
+    }
+    lastRedrawIndex = currentIndex;
+
+    const getBandColor = (b) => {
+      if (b <= 3) return "#ef4444";
+      if (b <= 5) return "#f59e0b";
+      return "#22c55e";
+    };
+    state.habitRoutePolylineLayer.clearLayers();
+
+    let activeAlert = null;
+    let minsAheadAccumulator = 0;
+    let pinnedLinks = new Set();
+
+    // Loop through all coordinates to redraw the path
+    for (let j = 0; j < coords.length - 1; j++) {
+      let line;
+
+      let matchData = segmentMatches[j];
+      if (j < currentIndex) {
+        // Draw a thin, solid grey line to show where the car has been
+        line = L.polyline([coords[j], coords[j + 1]], {
+          color: "#cbd5e1",
+          weight: 3,
+          opacity: 0.6
+        });
+      } else {
+        // Path ahead
+
+
+        const dist = getDistanceKm(coords[j], coords[j + 1]);
+        const band = (matchData && matchData.prediction) ? matchData.prediction.current_val : 5;
+        const speed = BAND_TO_KMH[band] || 45;
+        minsAheadAccumulator += (dist / speed) * 60
+
+        if (minsAheadAccumulator <= 20 && matchData && matchData.prediction) {
+          const intel = state.currentRouteIntel ? state.currentRouteIntel[segmentMatches[j].link_id] : null;
+          if (intel) {
+            if (intel.incident_type) {
+              activeAlert = { type: 'red', main: intel.incident_type.toUpperCase(), sub: "Incident detected ahead" };
+            }
+            else if (intel.is_hotspot && !activeAlert) {
+              activeAlert = { type: 'red', main: "DANGER ZONE", sub: "Incident Hotspot nearby" };
+            }
+            // Priority 3: Rain
+            else if (intel.is_raining && !activeAlert) {
+              activeAlert = { type: 'red', main: "RAIN AHEAD", sub: "Expect slippery road conditions" };
+            }
+          }
+
+          const p = matchData.prediction;
+          // Draw the colored predictive line
+          line = L.polyline([coords[j], coords[j + 1]], {
+            color: getBandColor(matchData.prediction.predicted_val),
+            weight: 8,
+            opacity: 1
+          });
+
+          // Re-bind the popup so you can still click segments during simulation
+          line.bindPopup(`
+          <div style="font-family: sans-serif; min-width: 180px;">
+            <b>${matchData.road_name || "LTA Road"}</b><br>
+            <span style="color: #64748b; font-size: 10px;">Reached in approx ${Math.round(minsAheadAccumulator)} mins</span>
+            <hr style="margin: 8px 0; border: 0; border-top: 1px solid #eee;">
+            Prediction: <b style="color:${getBandColor(p.predicted_val)}">Band ${p.predicted_val}</b>
+          </div>
+          `);
+
+          let isJam = (parseInt(p.predicted_val) <= 3);
+          const isDrop = (parseInt(p.current_val) - parseInt(p.predicted_val) >= 2);
+          if ((isJam || isDrop) && !pinnedLinks.has(matchData.link_id)) {
+            const midLat = (coords[j][0] + coords[j + 1][0]) / 2;
+            const midLon = (coords[j][1] + coords[j + 1][1]) / 2;
+            const simPin = createBaseJamMarker(midLat, midLon, matchData.road_name, j, isJam, p);
+            if (simPin) {
+              simPin.addTo(state.habitRoutePolylineLayer);
+              pinnedLinks.add(matchData.link_id);
+            }
+          }
+
+        } else {
+          // Unmapped segments (Grey dashed)
+          line = L.polyline([coords[j], coords[j + 1]], {
+            color: "#94a3b8",
+            weight: 4,
+            opacity: 0.5,
+            dashArray: "5, 10"
+          });
+        }
+      }
+      line.addTo(state.habitRoutePolylineLayer);
+    }
+    // Loop ends
+    if (activeAlert) {
+      updateHUD(activeAlert.type, activeAlert.main, activeAlert.sub);
+    } else {
+      updateHUD(null);
+    }
+
+  }
+
+  function stopJourneySimulation() {
+    if (simInterval) {
+      console.log("Stopping simulation interval...");
+      clearInterval(simInterval);
+      simInterval = null;
+    }
+
+    state.journeyActive = false;
+    const hud = document.getElementById("journey-hud");
+    if (hud) {
+      hud.classList.add("hidden");
+    }
+    if (simMarker) {
+      state.plannerMap.removeLayer(simMarker);
+      simMarker = null;
+    }
+
+    const btn = document.getElementById('sim-control-btn');
+    if (btn) {
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.style.background = '#2563eb'; // Reset to blue
+      btn.innerHTML = `
+            START JOURNEY
+        `;
+      // Change the onclick back to Start
+      btn.setAttribute('onclick', 'startJourneySimulation()');
+    }
+
+    if (state.currSelectedRoute) {
+      drawHabitRouteOnMap(state.currSelectedRoute);
+    }
+  }
+  window.stopJourneySimulation = stopJourneySimulation;
+
+
+  function updateHUD(alertType, mainText, subText) {
+    const hud = document.getElementById('journey-hud');
+    const dot = document.getElementById('hud-dot');
+    const main = document.getElementById('hud-main-text');
+    const sub = document.getElementById('hud-sub-text');
+
+    if (!alertType) {
+      dot.className = 'dot-green';
+      main.innerText = "Path Clear";
+      sub.innerText = "No hazards for 20 mins";
+      return;
+    }
+
+    // High Alert Logic
+    dot.className = 'dot-red';
+    main.innerText = mainText;
+    sub.innerText = subText;
+  }
+
+  // END START JOURNEY
+
 
 
   // MUHSIN'S INCIDENT CLEARANCE PART INTEGRATION
@@ -7976,7 +8427,6 @@ document.addEventListener("DOMContentLoaded", () => {
       body.innerHTML = '<div style="color:#9ca3af;font-size:12px;padding:8px 0;">ML assessment unavailable</div>';
     }
   }
-
 
   // END MUHSIN'S PART
   // 模块真实启动点
