@@ -1750,6 +1750,7 @@ document.addEventListener("DOMContentLoaded", () => {
     habitRoutesMap: null,
     habitRoutesBaseLayer: null,
     habitRoutePolylineLayer: null,
+    habitRoutePinLayer: null,
     expresswayLayerGroup: null,
     currentImpactLayer: null,
     habitSavedRoutes: [],
@@ -1760,6 +1761,7 @@ document.addEventListener("DOMContentLoaded", () => {
     historicalPrecision: "66%",
     habitRouteChatContext: {},
     habitRouteJams: {},
+    activeRoutePins: [],
     activePopup: null,
     selectedJamPinID: null,
     habitRouteSelectionContext: null,
@@ -1768,8 +1770,11 @@ document.addEventListener("DOMContentLoaded", () => {
     alternateRouteContext: null,
     habitPlanMode: "now",
     habitPlanDatetime: null,
+    // -- Journey
     currentRouteIntel: null,
     journeyActive: null,
+    // -- End Journey
+
     // -- admin states
     adminModalOpen: false,
     adminRecordingActive: false,
@@ -2214,6 +2219,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       state.habitRoutesBaseLayer = L.layerGroup().addTo(state.plannerMap);
       state.habitRoutePolylineLayer = L.layerGroup().addTo(state.plannerMap);
+      state.habitRoutePinLayer = L.layerGroup().addTo(state.plannerMap);
       state.previewDetourLayer = L.featureGroup().addTo(state.plannerMap);
       state.expresswayLayerGroup = L.layerGroup().addTo(state.liveMap);
       state.currentImpactLayer = L.layerGroup().addTo(state.liveMap);
@@ -3955,6 +3961,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ADDED BY JR - to clear loaded saved route layers
     if (state.habitRoutePolylineLayer) state.habitRoutePolylineLayer.clearLayers();
+    if (state.habitRoutePinLayer) state.habitRoutePinLayer.clearLayers();
     if (state.previewDetourLayer) state.previewDetourLayer.clearLayers();
     // END
 
@@ -4819,6 +4826,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ADDED BY JR - Clear loaded saved routes
     if (state.habitRoutePolylineLayer) state.habitRoutePolylineLayer.clearLayers();
+    if (state.habitRoutePinLayer) state.habitRoutePinLayer.clearLayers();
     if (state.previewDetourLayer) state.previewDetourLayer.clearLayers();
 
     if (!startQuery || !endQuery) {
@@ -5728,8 +5736,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (intel && intel.summary) {
       const s = intel.summary;
       healthHtml = `
-            <div style="padding-bottom: 10px; background: #f8fafc;>
-                <div style="font-size: 10px; font-weight: 800; color: #64748b; margin-bottom: 5px; text-transform: uppercase;"></div>
+            <div style="padding-bottom: 12px; background: #f8fafc;>
+                <div style="font-size: 10px; font-weight: 800; color: #64748b; margin-bottom: 5px;"></div>
                 <div style="display: flex; flex-direction: column; gap: 4px; font-size: 11px;">
                     <span>🚨 Incidents: <b>${s.total_incidents}</b></span>
                     <span>🌧️ Weather: <b>${s.is_raining_anywhere ? 'Rainy Regions' : 'Clear Skies'}</b></span>
@@ -6233,14 +6241,11 @@ document.addEventListener("DOMContentLoaded", () => {
       arriveDate.setHours(leaveTimeHours, leaveTimeMins + Math.round(best.eta), 0);
       const formattedArriveTime = `${String(arriveDate.getHours()).padStart(2, '0')}:${String(arriveDate.getMinutes()).padStart(2, '0')}`;
 
-
-
-      const holidayName = PUBLIC_HOLIDAYS[dateStr] || null;
-
       renderHabitPanelResult(
         route,
         { predicted_eta: best.eta },
         "arrive",
+        null,
         {
           arrivalTime: formattedArriveTime,
           departureTime: formattedLeaveTime,
@@ -6255,7 +6260,6 @@ document.addEventListener("DOMContentLoaded", () => {
       panel.innerHTML = `<div class="p-4 text-red-400">Error calculating best time.</div>`;
     }
   }
-
   // End Best Time Planning
 
 
@@ -6409,6 +6413,8 @@ document.addEventListener("DOMContentLoaded", () => {
           return "#22c55e";             // Green for Free Flow
         };
 
+        let lastPinIndex = -999;
+
         // Bind the Tooltip 
         line.bindPopup(`
               <div style="font-family: 'Inter', -apple-system, sans-serif; min-width: 220px; padding: 5px;">
@@ -6459,34 +6465,31 @@ document.addEventListener("DOMContentLoaded", () => {
         const isJam = (predictedVal <= 2);
         const isDrop = (currentVal >= 6 && bandChange >= 2);
 
+        const systemPinID = `jam-pin-${matchData.link_id}`;
+
+
         // Only draw the marker if it's actually a problem
-        if (isJam || isDrop) {
+        // Add a lastPinIndex check to make sure it doesn't spam map pins
+        if ((isJam || isDrop) && !state.habitRouteJams[systemPinID] && (j - lastPinIndex) > 15) {
 
           const midLat = (coords[j][0] + coords[j + 1][0]) / 2;
           const midLon = (coords[j][1] + coords[j + 1][1]) / 2;
 
-          // Pick the message based on the trigger
-
-          // Caller Helper function to draw map pins
-          const jamMarker = createBaseJamMarker(midLat, midLon, matchData.road_name, j, isJam, matchData.prediction);
-          // Add it to the Map Layer
-          jamMarker.addTo(state.habitRoutePolylineLayer);
-
           // Increment the jam count
           num_jams += 1;
 
-          jamMarker.on("click", () => {
-            state.selectedJamPinID = `jam-pin-${num_jams}`
-          })
+          // Caller Helper function to draw map pins
+          const jamMarker = createBaseJamMarker(midLat, midLon, matchData.road_name, num_jams, j, isJam, matchData.prediction, matchData.link_id);
 
-          jamMarker.on("popupopen", () => {
-            state.selectedJamPinID = `jam-pin-${num_jams}`
-          })
+          // Add it to the Map Layer
+          jamMarker.addTo(state.habitRoutePolylineLayer);
 
+          // Save to the jam-pin mapping
+          state.activeRoutePins.push(j);
 
           route_jam_pins.push({
             index: num_jams,
-            pin_id: `jam-pin-${num_jams}`,
+            pin_id: systemPinID,
             segment_index: j,
             link_id: matchData.link_id,
             road_name: matchData.road_name,
@@ -6494,7 +6497,7 @@ document.addEventListener("DOMContentLoaded", () => {
             lon: midLon,
           })
 
-          state.habitRouteJams[`jam-pin-${num_jams}`] = {
+          state.habitRouteJams[systemPinID] = {
             index: num_jams,
             pin: jamMarker,
             segment_index: j,
@@ -6506,6 +6509,8 @@ document.addEventListener("DOMContentLoaded", () => {
             predictedVal: predictedVal,
             bandChange: bandChange
           }
+
+          lastPinIndex = j;
         }
 
       } else {
@@ -6548,7 +6553,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   // --- END Draw Habit Route ---
 
-  function createBaseJamMarker(lat, lon, roadName, pinIndex, isJam, p) {
+  // -- Helper function to create marker --
+  // Used by drawHabitRouteOnMap and updateColorsAhead
+  function createBaseJamMarker(lat, lon, roadName, pinIndex, segmentIndex, isJam, p, linkId) {
     const title = isJam ? "Jam" : "Slowdown";
     const color = "#ef4444";
 
@@ -6565,20 +6572,36 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const marker = L.marker([lat, lon], { icon: icon });
 
+    marker.segmentIndex = segmentIndex;
+    marker.index = pinIndex;
+
     marker.bindPopup(`
         <div style="font-family: sans-serif; padding: 5px; min-width: 150px;">
-            <b style="color: ${color};">${title}</b><br>
+            <b style="color: ${color};">Pin ${pinIndex}: ${title}</b><br>
             <small>${roadName}</small><br>
             <hr style="margin: 5px 0; border-top: 1px solid #eee;">
-            <button onclick="simulateReroute(${p.link_id}, ${pinIndex})" 
+            <button onclick="simulateReroute(${p.link_id}, ${segmentIndex})" 
                     style="width: 100%; background: #3b82f6; color: white; border: none; border-radius: 3px; cursor: pointer;">
                 Reroute
             </button>
         </div>
     `);
 
+    const systemPinID = `jam-pin-${linkId}`;
+    marker.on("click", () => {
+      state.selectedJamSegment = segmentIndex;
+      state.selectedJamPinID = systemPinID;
+      console.log(`Selected Segment: ${segmentIndex} | ID: ${systemPinID}`);
+    });
+
+    marker.on("popupopen", () => {
+      state.selectedJamSegment = segmentIndex;
+      state.selectedJamPinID = systemPinID;
+    });
+
     return marker;
   }
+  // End Helper Function for Create Jam Marker
 
   // Update Habit Route settings
   async function saveHabitRouteSettings(routeId, card) {
@@ -6886,6 +6909,10 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
+    if (window.simInterval) {
+      clearInterval(window.simInterval);
+    }
+
     // Write the current loading status into the current jam popup
     const popupBtn = document.querySelector(".leaflet-popup-content button");
     if (popupBtn) {
@@ -6948,7 +6975,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Call functions to draw the alternate route, + show the decision popup
         renderPreviewRoute(mergedCoords, analysisData.match_info.segment_matches, anchorIdx);
-        showAcceptRejectCard(analysisData.summary.predicted_eta, mergedCoords);
+        showAcceptRejectCard(analysisData.summary.predicted_eta, mergedCoords, analysisData.match_info);
 
         state.plannerMap.closePopup();
 
@@ -7029,7 +7056,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function showAcceptRejectCard(newEta, finalCoords) {
+  function showAcceptRejectCard(newEta, finalCoords, newMatchInfo) {
     const existing = document.getElementById("altroute-decision-card");
     if (existing) existing.remove();
 
@@ -7056,7 +7083,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // Save the new coords to a state 
     state.alternateRouteContext = {
       coords: finalCoords,
-      newEta: newEta
+      newEta: newEta,
+      newMatchInfo: newMatchInfo
     }
 
     document.body.appendChild(card);
@@ -7090,18 +7118,44 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!state.alternateRouteContext || !state.alternateRouteContext.coords) {
       return;
     }
+
+    // Pause the car if a journey is ongoing
+    if (window.simInterval) {
+      clearInterval(window.simInterval);
+    }
+
+    // Reset the jam map pins
+    if (state.habitRoutePinLayer) {
+      state.habitRoutePinLayer.clearLayers();
+    }
+
+    lastRedrawIndex = -1;
+    state.activeRoutePins = [];
+    state.habitRouteJams = {};
+
+    // Clear UI
     const card = document.getElementById("altroute-decision-card");
     if (card)
       card.remove();
     state.previewDetourLayer.clearLayers();
     state.plannerMap.removeLayer(state.previewDetourLayer)
 
+    // Update the current route context in state
     state.currentRouteCoords = state.alternateRouteContext.coords;
+    state.currMatchInfo = state.alternateRouteContext.newMatchInfo
     const updatedRouteObj = {
       ...state.currSelectedRoute,
       coords: state.alternateRouteContext.coords
     }
-    await drawHabitRouteOnMap(updatedRouteObj);
+
+    if (!state.journeyActive) {
+      await drawHabitRouteOnMap(updatedRouteObj);
+    }
+    else {
+      window.playSimulationLoop();
+    }
+
+
 
     state.alternateRouteContext = null;
 
@@ -7115,6 +7169,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (state.habitRoutePolylineLayer) {
       state.plannerMap.fitBounds(state.habitRoutePolylineLayer.getBounds(), { padding: [40, 40] });
     }
+    window.playSimulationLoop();
   }
 
   // ANALYZE EXPRESSWAYS section
@@ -7697,15 +7752,22 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
 
-  // Helper function to open up Map Pin
+  // Helper function to open up Jam Map Pin
   async function selectHabitJam(pinIndex) {
-    const jam = state.habitRouteJams[`jam-pin-${pinIndex}`];
+    const index = pinIndex - 1;
+    const targetJam = state.activeRoutePins[index];
+    if (targetJam === undefined) {
+      return "No active jam!"
+    }
+
+    const systemPinID = `jam-pin-${targetJam}`;
+    const jam = state.habitRouteJams[systemPinID];
     if (!jam || !jam.pin) {
       return false;
     }
 
     jam.pin.openPopup();
-    state.selectedJamPinID = pinIndex;
+    state.selectedJamPinID = systemPinID;
     return true;
   }
 
@@ -7897,26 +7959,60 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
 
-
-  let simInterval = null;
+  window.simInterval = null;
   let simMarker = null;
   let lastRedrawIndex = -1;
+  let journeyPollingTimer = null;
+
   async function startJourneySimulation() {
     const route = state.currSelectedRoute;
     if (!route || !route.coords) {
       return;
     }
+
+    // Set journey state to active so the system knows user is in journey phase
     state.journeyActive = true;
+    // Show the FAST LookAhead journey analysis panel
     const hud = document.getElementById("journey-hud");
     if (hud) {
       hud.classList.remove("hidden");
     }
 
+    // Set a poller to repeatedly poll fresh intel data, as the user moves through the route
+    journeyPollingTimer = setInterval(async () => {
+      if (!state.journeyActive) {
+        return;
+      }
+
+      // For each link id in current matches, query backend for route intel
+      const currentLinkIds = state.currMatchInfo.map(m => m.link_id);
+      try {
+        const response = await fastAuthFetch('/api/ml/route-intel', {
+          method: "POST",
+          body: JSON.stringify({ link_ids: currentLinkIds })
+        });
+
+        const freshData = await response.json();
+
+        state.currentRouteIntel = freshData.details;
+        state.currentRouteIntelSummary = freshData.summary;
+      } catch (err) {
+        console.error("Failed to poll route intel: ", err);
+      }
+
+    }, 180000);
+
     if (state.habitRoutePolylineLayer) {
       state.habitRoutePolylineLayer.clearLayers();
+
     }
 
+    // Reset active route details. They should be updated in this journey instead
+    state.activeRoutePins = [];
+    state.habitRouteJams = {};
+
     let coords = route.coords;
+    // Grab the currently selected match info
     let matchInfo = state.currMatchInfo || state.currSelectedRoute.match_info
     let segmentMatches = matchInfo.segment_matches || [];
 
@@ -7924,11 +8020,11 @@ document.addEventListener("DOMContentLoaded", () => {
       state.plannerMap.removeLayer(simMarker);
     }
 
-
+    // Flip the "Start Journey" button to "Stop Journey"
     const btn = document.getElementById('sim-control-btn');
     if (btn) {
       btn.style.background = '#ef4444';
-      btn.textContent = "STOP SIMULATION";
+      btn.textContent = "STOP JOURNEY";
       btn.setAttribute('onclick', 'stopJourneySimulation()');
     }
 
@@ -7944,66 +8040,92 @@ document.addEventListener("DOMContentLoaded", () => {
     let accumulatedMins = 0;
     let isFetching = false;
 
-    simInterval = setInterval(async () => {
-      if (currentIndex >= coords.length - 1) {
-        clearInterval(simInterval);
-        return;
+    window.playSimulationLoop = function () {
+
+      if (window.simInterval) {
+        clearInterval(window.simInterval);
       }
-
-      const oldCoord = coords[currentIndex];
-
-      currentIndex += 1;
-      const newCoord = coords[currentIndex];
-
-      simMarker.setLatLng(newCoord);
-      // state.plannerMap.panTo(newCoord, { animate: true, duration: 0.5 });
-
-      const distKm = getDistanceKm(oldCoord, newCoord);
-
-      const currentMatch = segmentMatches[currentIndex]
-      const band = (currentMatch && currentMatch.prediction) ? currentMatch.prediction.current_val : 5;
-      const speedKmh = BAND_TO_KMH[band] || 45;
-
-      const hopMins = (distKm / speedKmh) * 60;
-      accumulatedMins += hopMins;
-
-      updateColorsAhead(coords, segmentMatches, currentIndex);
-      if (accumulatedMins >= 5 && !isFetching) {
-        isFetching = true;
-
-        const remainingCoords = coords.slice(currentIndex);
-
-        try {
-          const res = await window.fastAuthFetch("/api/ml/habit-routes/analyze", {
-            method: "POST",
-            body: JSON.stringify({ coords_json: remainingCoords })
-          });
-
-          if (res.ok) {
-            const freshData = await res.json();
-
-            accumulatedMins = 0;
-            const freshMatches = freshData.match_info.segment_matches;
-            segmentMatches.splice(currentIndex, freshMatches.length, ...freshMatches);
-
-            updateColorsAhead(coords, segmentMatches, currentIndex);
-          }
-        } catch (err) {
-          console.error("Failed")
-        } finally {
-          isFetching = false;
+      window.simInterval = setInterval(async () => {
+        if (currentIndex >= coords.length - 1) {
+          clearInterval(window.simInterval);
+          stopJourneySimulation();
+          return;
         }
-      }
-    }, 300);
+
+        // Pull fresh data from state, to handle if alternate route was accepted mid journey
+        const currentCoords = state.currentRouteCoords;
+        const currentMatches = state.currMatchInfo.segment_matches || [];
+
+        // Iterate the current index
+        const oldCoord = currentCoords[currentIndex];
+        currentIndex += 1;
+        const newCoord = currentCoords[currentIndex];
+
+        simMarker.setLatLng(newCoord);
+        // state.plannerMap.panTo(newCoord, { animate: true, duration: 0.5 });
+
+        const distKm = getDistanceKm(oldCoord, newCoord);
+
+        // Get current match at this index
+        const currentMatch = currentMatches[currentIndex]
+        const band = (currentMatch && currentMatch.prediction) ? currentMatch.prediction.current_val : 5;
+        const speedKmh = BAND_TO_KMH[band] || 45;
+
+        const hopMins = (distKm / speedKmh) * 60;
+        accumulatedMins += hopMins;
+
+        // Update road ahead based on new location
+        updateColorsAhead(currentCoords, currentMatches, currentIndex);
+
+
+        if (accumulatedMins >= 5 && !isFetching) {
+          isFetching = true;
+
+          const remainingCoords = currentCoords.slice(currentIndex);
+
+          try {
+            const res = await window.fastAuthFetch("/api/ml/habit-routes/analyze", {
+              method: "POST",
+              body: JSON.stringify({ coords_json: remainingCoords })
+            });
+
+            if (res.ok) {
+              const freshData = await res.json();
+
+              accumulatedMins = 0;
+              const freshMatches = freshData.match_info.segment_matches;
+
+              state.currMatchInfo.segment_matches.splice(currentIndex, freshMatches.length, ...freshMatches);
+
+              updateColorsAhead(currentCoords, state.currMatchInfo.segment_matches, currentIndex);
+            }
+          } catch (err) {
+            console.error("Failed")
+          } finally {
+            isFetching = false;
+          }
+        }
+      }, 300);
+    };
+    window.playSimulationLoop();
   }
   window.startJourneySimulation = startJourneySimulation
 
+
+  // For debugging
+  let lastKnownDistance = 0;
+  let lastKnownLinkId = null;
+
+  // To update segment coloring and generate Jam Piins for only T+15 ahead
   function updateColorsAhead(coords, segmentMatches, currentIndex) {
     if (!state.habitRoutePolylineLayer) return;
+
+    let lastPinIndex = -999;
 
     // if (state.plannerMap.hasLayer(state.activePopup)) {
     //   return false;
     // }
+    // Only update every 5 moves to prevent spam
     if (Math.abs(currentIndex - lastRedrawIndex) < 5 && lastRedrawIndex !== -1) {
       return;
     }
@@ -8016,9 +8138,35 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     state.habitRoutePolylineLayer.clearLayers();
 
-    let activeAlert = null;
+    if (state.habitRoutePinLayer) {
+      state.habitRoutePinLayer.eachLayer((layer) => {
+        if (layer.segmentIndex != undefined && layer.segmentIndex < currentIndex) {
+          state.habitRoutePinLayer.removeLayer(layer);
+          state.activeRoutePins = state.activeRoutePins.filter(j => j !== layer.segmentIndex);
+
+          delete state.habitRouteJams[`jam-pin-${layer.segmentIndex}`];
+
+        }
+      })
+    }
+
+    let allAlerts = [];
+    let seenLinks = new Set();
     let minsAheadAccumulator = 0;
-    let pinnedLinks = new Set();
+    let distAheadAccumulator = 0;
+
+    let currentRoadName = null;
+    for (let offset of [0, -1, -2, -3, 1, 2]) {
+      let idx = currentIndex + offset;
+      if (segmentMatches[idx] && segmentMatches[idx].road_name) {
+        currentRoadName = segmentMatches[idx].road_name;
+        break;
+      }
+    }
+    currentRoadName = currentRoadName || "Road";
+    if (segmentMatches[currentIndex] && segmentMatches[currentIndex].road_name) {
+      currentRoadName = segmentMatches[currentIndex].road_name;
+    }
 
     // Loop through all coordinates to redraw the path
     for (let j = 0; j < coords.length - 1; j++) {
@@ -8040,23 +8188,63 @@ document.addEventListener("DOMContentLoaded", () => {
         const band = (matchData && matchData.prediction) ? matchData.prediction.current_val : 5;
         const speed = BAND_TO_KMH[band] || 45;
         minsAheadAccumulator += (dist / speed) * 60
+        distAheadAccumulator += dist;
 
-        if (minsAheadAccumulator <= 20 && matchData && matchData.prediction) {
+
+        if (minsAheadAccumulator <= 60 && matchData && matchData.prediction) {
+          const linkId = matchData.link_id;
           const intel = state.currentRouteIntel ? state.currentRouteIntel[segmentMatches[j].link_id] : null;
-          if (intel) {
-            if (intel.incident_type) {
-              activeAlert = { type: 'red', main: intel.incident_type.toUpperCase(), sub: "Incident detected ahead" };
+          const p = matchData.prediction;
+          let isJam = (parseInt(p.predicted_val) <= 3);
+          let isSlowdown = (parseInt(p.current_val) - parseInt(p.predicted_val) >= 2);
+
+          let category = null;
+          if (intel?.incident_type) category = 'incident';
+          else if (intel?.is_hotspot) category = 'hotspot';
+          else if (isJam) category = 'jam';
+          else if (isSlowdown) category = 'slowdown';
+          else if (intel?.is_raining) category = 'weather';
+
+          // Only proceed if found a hazard + not already logged this specific category
+          if (category && !seenLinks.has(category)) {
+
+            let distString = distAheadAccumulator < 1
+              ? `${Math.round(distAheadAccumulator * 1000)}m`
+              : `${distAheadAccumulator.toFixed(1)}km`;
+
+            let roadName = matchData.road_name || "Unknown Road";
+            let alertObj = { type: '', main: '', sub: '' };
+
+            if (category === 'incident') {
+              alertObj.type = 'red';
+              alertObj.main = intel.incident_type.toUpperCase();
+              alertObj.sub = `${roadName} (${distString})`;
+            } else if (category === 'hotspot') {
+              alertObj.type = 'red';
+              alertObj.main = "INCIDENT HOTSPOT";
+              alertObj.sub = `${roadName} (${distString})`;
+            } else if (category === 'jam') {
+              alertObj.type = 'orange';
+              alertObj.main = "JAM AHEAD";
+              // Only show the arrow if the speed is actually dropping
+              let bandText = (p.current_val !== p.predicted_val) ? `${p.current_val} → ${p.predicted_val}` : `${p.predicted_val}`;
+              alertObj.sub = `${roadName} (${distString}) | Band ${bandText}`;
+            } else if (category === 'slowdown') {
+              alertObj.type = 'orange';
+              alertObj.main = "SLOWDOWN";
+              alertObj.sub = `${roadName} (${distString}) | Band ${p.current_val} → ${p.predicted_val}`;
+            } else if (category === 'weather') {
+              alertObj.type = 'blue';
+              alertObj.main = "RAIN AHEAD";
+              alertObj.sub = `Slippery conditions in ${distString}`;
             }
-            else if (intel.is_hotspot && !activeAlert) {
-              activeAlert = { type: 'red', main: "DANGER ZONE", sub: "Incident Hotspot nearby" };
-            }
-            // Priority 3: Rain
-            else if (intel.is_raining && !activeAlert) {
-              activeAlert = { type: 'red', main: "RAIN AHEAD", sub: "Expect slippery road conditions" };
-            }
+
+            allAlerts.push(alertObj);
+
+            // Log the category 
+            seenLinks.add(category);
           }
 
-          const p = matchData.prediction;
           // Draw the colored predictive line
           line = L.polyline([coords[j], coords[j + 1]], {
             color: getBandColor(matchData.prediction.predicted_val),
@@ -8074,15 +8262,33 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
           `);
 
-          let isJam = (parseInt(p.predicted_val) <= 3);
           const isDrop = (parseInt(p.current_val) - parseInt(p.predicted_val) >= 2);
-          if ((isJam || isDrop) && !pinnedLinks.has(matchData.link_id)) {
+          const systemPinID = `jam-pin-${matchData.link_id}`
+          if ((isJam || isDrop) && !state.habitRouteJams[systemPinID] && (j - lastPinIndex > 15)) {
             const midLat = (coords[j][0] + coords[j + 1][0]) / 2;
             const midLon = (coords[j][1] + coords[j + 1][1]) / 2;
-            const simPin = createBaseJamMarker(midLat, midLon, matchData.road_name, j, isJam, p);
+
+            const pinIndex = state.activeRoutePins.length + 1;
+
+            // Call the helper function to create the marker
+            const simPin = createBaseJamMarker(midLat, midLon, matchData.road_name, pinIndex, j, isJam, p, matchData.link_id);
             if (simPin) {
-              simPin.addTo(state.habitRoutePolylineLayer);
-              pinnedLinks.add(matchData.link_id);
+              simPin.addTo(state.habitRoutePinLayer);
+
+              state.activeRoutePins.push(j);
+              state.activeRoutePins.sort((a, b) => a - b);
+
+              state.habitRouteJams[systemPinID] = {
+                index: pinIndex,
+                pin: simPin,
+                segmentIndex: j,
+                link_id: matchData.link_id,
+                road_name: matchData.road_name,
+                lat: midLat,
+                lon: midLon
+              };
+
+              lastPinIndex = j;
             }
           }
 
@@ -8099,19 +8305,20 @@ document.addEventListener("DOMContentLoaded", () => {
       line.addTo(state.habitRoutePolylineLayer);
     }
     // Loop ends
-    if (activeAlert) {
-      updateHUD(activeAlert.type, activeAlert.main, activeAlert.sub);
-    } else {
-      updateHUD(null);
-    }
+
+    updateHUD(allAlerts, currentRoadName);
 
   }
 
   function stopJourneySimulation() {
-    if (simInterval) {
+    if (window.simInterval) {
       console.log("Stopping simulation interval...");
-      clearInterval(simInterval);
-      simInterval = null;
+      clearInterval(window.simInterval);
+      window.simInterval = null;
+    }
+
+    if (journeyPollingTimer) {
+      clearInterval(journeyPollingTimer);
     }
 
     state.journeyActive = false;
@@ -8122,6 +8329,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (simMarker) {
       state.plannerMap.removeLayer(simMarker);
       simMarker = null;
+    }
+
+    if (state.habitRoutePolylineLayer) {
+      state.habitRoutePolylineLayer.clearLayers();
+    }
+
+    if (state.habitPinLayer) {
+      state.habitPinLayer.clearLayers();
     }
 
     const btn = document.getElementById('sim-control-btn');
@@ -8143,24 +8358,60 @@ document.addEventListener("DOMContentLoaded", () => {
   window.stopJourneySimulation = stopJourneySimulation;
 
 
-  function updateHUD(alertType, mainText, subText) {
-    const hud = document.getElementById('journey-hud');
+  // Update the FAST Sentinel panel
+  function updateHUD(allAlerts, currentRoad) {
     const dot = document.getElementById('hud-dot');
-    const main = document.getElementById('hud-main-text');
-    const sub = document.getElementById('hud-sub-text');
+    const body = document.getElementById('hud-body');
 
-    if (!alertType) {
+    const headerHtml = `
+      <div style="font-size: 10px; color: #94a3b8; margin-bottom: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid #f8fafc; padding-bottom: 6px;">
+        ${currentRoad}
+      </div>
+    `;
+
+    let html = headerHtml;
+
+    // Render any alerts
+    if (allAlerts && allAlerts.length > 0) {
+      dot.className = `dot-${allAlerts[0].type}`;
+      allAlerts.slice(0, 3).forEach((alert) => {
+        const color = alert.type === 'red' ? '#ef4444' : (alert.type === 'blue' ? '#3b82f6' : '#f59e0b');
+        html += `
+          <div class="alert-item" style="margin-bottom: 14px; border-left: 2px solid ${color}; padding-left: 10px;">
+              <div style="font-size: 12px; font-weight: 600; color: #1e293b; letter-spacing: 0.2px;">${alert.main}</div>
+              <div style="font-size: 11px; color: #64748b; font-weight: 400; margin-top: 3px;">${alert.sub}</div>
+          </div>
+        `;
+      });
+    } else {
       dot.className = 'dot-green';
-      main.innerText = "Path Clear";
-      sub.innerText = "No hazards for 20 mins";
-      return;
     }
 
-    // High Alert Logic
-    dot.className = 'dot-red';
-    main.innerText = mainText;
-    sub.innerText = subText;
+    // 3. Check what is actually in the active list
+    const hasWeather = allAlerts && allAlerts.some(a => a.main === "RAIN AHEAD");
+    const hasIncidents = allAlerts && allAlerts.some(a => a.type === 'red' && a.main !== "INCIDENT HOTSPOT");
+
+    if (!hasIncidents) {
+      html += `
+          <div class="alert-item" style="margin-bottom: 14px; border-left: 2px solid #22c55e; padding-left: 10px;">
+              <div style="font-size: 12px; font-weight: 600; color: #1e293b; letter-spacing: 0.2px;">INCIDENTS</div>
+              <div style="font-size: 11px; color: #64748b; font-weight: 400; margin-top: 3px;">No incidents ahead</div>
+          </div>
+      `;
+    }
+
+    if (!hasWeather) {
+      html += `
+          <div class="alert-item" style="margin-bottom: 14px; border-left: 2px solid #22c55e; padding-left: 10px;">
+              <div style="font-size: 12px; font-weight: 600; color: #1e293b; letter-spacing: 0.2px;">WEATHER</div>
+              <div style="font-size: 11px; color: #64748b; font-weight: 400; margin-top: 3px;">Clear</div>
+          </div>
+      `;
+    }
+
+    body.innerHTML = html;
   }
+  // End Update HUD
 
   // END START JOURNEY
 
