@@ -12,7 +12,7 @@ const config = require('./config');
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use('/ui2', express.static(path.join(__dirname, 'UI 2')));
+app.use('/ui2', express.static(path.join(__dirname, '..', 'UI 2')));
 
 const SIGNUP_CODE_TTL_MIN = 10;
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/fyp_demo';
@@ -29,7 +29,6 @@ const MAIL_DEV_MODE = String(process.env.MAIL_DEV_MODE || 'true').toLowerCase() 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY || '';
 const FASTAPI_BASE_URL = process.env.FASTAPI_BASE_URL || 'http://127.0.0.1:8000';
-const FASTAPI_ML_URL = process.env.FASTAPI_ML_URL || 'http://127.0.0.1:8000';
 const RATE_LIMIT_WINDOW_MS = Math.max(1000, parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10) || 60000);
 const RATE_LIMIT_MAX = Math.max(10, parseInt(process.env.RATE_LIMIT_MAX || '180', 10) || 180);
 const AUTH_RATE_LIMIT_MAX = Math.max(3, parseInt(process.env.AUTH_RATE_LIMIT_MAX || '40', 10) || 40);
@@ -931,21 +930,31 @@ app.use('/api/auth', createRateLimiter({ windowMs: RATE_LIMIT_WINDOW_MS, maxRequ
 
 // Add ML Listener
 // Check all endpoints starting with /api/ml/*
-app.all('/api/ml/*', requireAuth, async (req, res) => {
-  // Extract the specific endpoint path and parameters
-  const subPath = req.params[0];
-  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  // Resolve FastAPI service location, use Render if it is online
+const mlGatekeeper = (req, res, next) => {
+  req.mlSubPath = req.params[0];
+  req.mlQuery = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+
+  const publicPaths = ['expressway-forecast', 'map-hotspots', 'hotspots'];
+
+  if (publicPaths.includes(req.mlSubPath)) {
+    console.log(`🔓 Public Access: ${req.mlSubPath}`);
+    return next(); 
+  }
+
+  console.log(`🔒 Protected Access: ${req.mlSubPath}`);
+  return requireAuth(req, res, next);
+};
+
+const mlProxy = async (req, res) => {
   const fastApiBaseUrl = await getFastApiBaseUrl();
-  const targetUrl = `${fastApiBaseUrl}/api/${subPath}${query}`;
+  const targetUrl = `${fastApiBaseUrl}/api/${req.mlSubPath}${req.mlQuery}`;
 
   try {
-    // Send request to FastAPI with method and headers
     const response = await fetch(targetUrl, {
       method: req.method,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': req.headers.authorization
+        'Authorization': req.headers.authorization || ''
       },
       body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined
     });
@@ -953,10 +962,12 @@ app.all('/api/ml/*', requireAuth, async (req, res) => {
     const data = await response.json();
     res.json(data);
   } catch (error) {
-    console.error(`Service failed for ${subPath}:`, error.message);
+    console.error(`Service failed for ${req.mlSubPath}:`, error.message);
     res.status(500).json({ error: "Service Unreachable" });
   }
-});
+};
+
+app.all('/api/ml/*', mlGatekeeper, mlProxy);
 
 async function issueSignupCode({ name, email, password }) {
   if (!name || !email || !password) {
@@ -2518,7 +2529,7 @@ async function canReachFastApi(baseUrl) {
   if (!baseUrl) {
     return false;
   }
-  
+
   try {
     // Set a 2.5s timeout to prevent the Node server from freezing
     const controller = new AbortController();
@@ -2532,7 +2543,7 @@ async function canReachFastApi(baseUrl) {
     clearTimeout(timer);
     // Returns true if reachable
     return resp.ok;
-  } catch(_) {
+  } catch (_) {
     return false;
   }
 }
@@ -3936,7 +3947,7 @@ app.post('/api/ml/incident-predict', requireAuth, async (req, res) => {
     };
 
     let pyResult;
-    
+
     try {
       pyResult = await callFastApiJson('/api/ml/incident-predict', payload, 15000);
     } catch (fastApiErr) {
@@ -3948,9 +3959,9 @@ app.post('/api/ml/incident-predict', requireAuth, async (req, res) => {
 
   } catch (e) {
     console.error('Incident ML prediction failure:', e.message);
-    res.status(500).json({ 
-      error: 'Incident ML prediction failed', 
-      details: e.message 
+    res.status(500).json({
+      error: 'Incident ML prediction failed',
+      details: e.message
     });
   }
 });
