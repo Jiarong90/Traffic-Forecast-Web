@@ -685,7 +685,7 @@ Currently studying at University of Wollongong.">
             PGS</button>
           <button type="button" class="btn-dark hidden" id="map-toggle-feedback-btn"><span class="icon-pin"></span> SHOW
             USER FEEDBACK</button>
-          <!-- JR - idea to add expressway-only display for expressway analysis -->
+          <!-- expressway-only display for expressway analysis -->
           <div id="expressways-wrapper" style="position: relative; display: inline-block;">
             <button type="button" class="btn-dark" id="map-toggle-expressways-btn">
               <span class="icon-road"></span> SHOW EXPRESSWAYS ▾
@@ -704,6 +704,9 @@ Currently studying at University of Wollongong.">
               <label><input type="checkbox" class="exp-checkbox" value="KJE"> KJE</label>
             </div>
           </div>
+          <button type="button" class="btn-dark" id="map-toggle-hotspots-btn">
+            <span class="icon-warning"></span> SHOW HOTSPOTS
+          </button>
         </div>
         <div id="liveMap"></div>
 
@@ -744,6 +747,7 @@ Currently studying at University of Wollongong.">
               <button type="button" class="route-start-suggestion" id="route-start-current-option">Current
                 Location</button>
             </div>
+
           </div>
           <div class="route-actions">
             <button type="button" class="pref-btn" id="route-preference-btn"><span class="icon-info"></span> PREFERENCE:
@@ -900,7 +904,7 @@ Currently studying at University of Wollongong.">
 
               <div id="habit-tab-title"
                 style="display: none; margin-bottom:10px; font-size: 14px; font-weight: 700; text-align: center;">
-                Choose Planning Mode
+                Choose FAST Planning Mode
               </div>
 
               <div class="habit-mode-group">
@@ -911,7 +915,7 @@ Currently studying at University of Wollongong.">
                   LEAVE AT
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-primary habit-mode-btn" data-mode="best">
-                  BEST
+                  SMART
                 </button>
               </div>
 

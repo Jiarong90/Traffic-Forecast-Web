@@ -1770,6 +1770,11 @@ document.addEventListener("DOMContentLoaded", () => {
     alternateRouteContext: null,
     habitPlanMode: "now",
     habitPlanDatetime: null,
+    // -- Hotspots
+    mapHotspotsVisible: false,
+    mapHotspotsItems: [],
+    liveHotspotsLayer: null,
+
     // -- Journey
     currentRouteIntel: null,
     journeyActive: null,
@@ -2223,6 +2228,9 @@ document.addEventListener("DOMContentLoaded", () => {
       state.previewDetourLayer = L.featureGroup().addTo(state.plannerMap);
       state.expresswayLayerGroup = L.layerGroup().addTo(state.liveMap);
       state.currentImpactLayer = L.layerGroup().addTo(state.liveMap);
+
+      // Hotspots
+      state.liveHotspotsLayer = L.layerGroup().addTo(state.liveMap);
     }
   }
 
@@ -2334,6 +2342,14 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.innerHTML = state.mapPgsVisible
       ? `<span class="icon-pin"></span> HIDE PGS`
       : `<span class="icon-pin"></span> SHOW PGS`;
+  }
+
+  function renderMapHotspotsToggleButton() {
+    const btn = document.getElementById("map-toggle-hotspots-btn");
+    if (!btn) return;
+    btn.innerHTML = state.mapHotspotsVisible
+      ? `<span class="icon-warning"></span> HIDE HOTSPOTS`
+      : `<span class="icon-warning"></span> SHOW HOTSPOTS`;
   }
 
   // 读取 auth 模块维护的用户设置缓存（容错为 {}，避免页面崩溃）
@@ -4135,6 +4151,13 @@ document.addEventListener("DOMContentLoaded", () => {
     return Array.isArray(data.value) ? data.value : [];
   }
 
+  async function fetchHotspotMarkers() {
+    const res = await window.fastAuthFetch("/api/ml/map-hotspots");
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Failed to load hotspots");
+    return json.data || [];
+  }
+
   function formatRateLine(label, value) {
     const safe = String(value || "").trim();
     if (!safe) return "";
@@ -4234,7 +4257,49 @@ document.addEventListener("DOMContentLoaded", () => {
     renderMapPgsToggleButton();
     drawPgsMarkers();
   }
+  async function drawHotspotMarkers() {
+    if (!state.liveMap || !state.liveHotspotsLayer) return;
+    state.liveHotspotsLayer.clearLayers();
 
+    if (!state.mapHotspotsVisible) return;
+
+    (state.mapHotspotsItems || []).forEach((item) => {
+      const intensity = item.danger_score;
+      const color = intensity > 100 ? "#ef4444" : "#f97316"; // Red for high, Orange for mid
+      const label = intensity > 100 ? "HIGH FREQUENCY" : "MODERATE FREQUENCY";
+
+      const popupHtml = `
+      <div style="font-size:12px; min-width:180px; font-family: sans-serif;">
+        <div style="margin-bottom:4px;">${label} ZONE</div>
+        <div style="margin-bottom:6px; font-size:14px;">${item.road_name}</div>
+        <hr style="border:none; border-top:1px solid #eee; margin:8px 0;" />
+        <div style="display:flex; justify-content:space-between;"><span>Accidents:</span> <b>${item.accidents}</b></div>
+        <div style="display:flex; justify-content:space-between;"><span>Breakdowns:</span> <b>${item.breakdowns}</b></div>
+        <div style="display: flex; justify-content:space-between;"><span><b>Drive safely!</b></span> </div>
+      </div>
+    `;
+
+      const hotspotIcon = L.divIcon({
+        html: `
+          <div style="
+            width: 10px; 
+            height: 10px; 
+            background-color: ${color}; 
+            border: 1.5px solid white; 
+            border-radius: 50%; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+          "></div>
+        `,
+        className: '',
+        iconSize: [13, 13],
+        iconAnchor: [6, 6]
+      });
+
+      L.marker([item.mid_lat, item.mid_lon], { icon: hotspotIcon })
+        .bindPopup(popupHtml)
+        .addTo(state.liveHotspotsLayer);
+    });
+  }
   // 地理编码：支持邮编/地名/MRT（后端做多源解析）
   async function geocodeLocation(inputText) {
     const r = await fetch(`/api/geocode?q=${encodeURIComponent(inputText)}`);
@@ -5739,9 +5804,10 @@ document.addEventListener("DOMContentLoaded", () => {
             <div style="padding-bottom: 12px; background: #f8fafc;>
                 <div style="font-size: 10px; font-weight: 800; color: #64748b; margin-bottom: 5px;"></div>
                 <div style="display: flex; flex-direction: column; gap: 4px; font-size: 11px;">
-                    <span>🚨 Incidents: <b>${s.total_incidents}</b></span>
-                    <span>🌧️ Weather: <b>${s.is_raining_anywhere ? 'Rainy Regions' : 'Clear Skies'}</b></span>
+                    <span>🚧 Incidents: <b>${s.total_incidents}</b></span>
+                    <span>🌤️ Weather: <b>${s.is_raining_anywhere ? 'Rainy Regions' : 'Clear Skies'}</b></span>
                     <span>⚠️ Hotspots: <b>${s.total_hotspots} detected</b></span>
+                    <span>⛽ Est. Fuel: <b>$${fuelPrice}</b></span>
                 </div>
             </div>
         `;
@@ -5768,7 +5834,6 @@ document.addEventListener("DOMContentLoaded", () => {
         T+15 ETA: ${summary.predicted_eta} min<br>
         ${summary.large_changes?.length ? `Jam: ${summary.large_changes[0].road_name}` : ""}
         ${healthHtml}
-        ${fuelPrice}
         ${simButton}
       </div>
     `;
@@ -5780,7 +5845,6 @@ document.addEventListener("DOMContentLoaded", () => {
         <b>${name}</b><br><br>
         Typical ETA: ${summary.predicted_eta} min<br>
         Status: ${summary.status}
-        ${fuelPrice}
       </div>
     `;
     }
@@ -5793,7 +5857,6 @@ document.addEventListener("DOMContentLoaded", () => {
         Leave at: ${extra.departureTime}<br>
         Arrive by: ${extra.arrivalTime}<br>
         ⏱️ ETA: ${summary.predicted_eta} min
-        ${fuelPrice}
       </div>
     `;
     }
@@ -6041,8 +6104,6 @@ document.addEventListener("DOMContentLoaded", () => {
       m ? { link_id: m.link_id, road_name: m.road_name } : null
     );
 
-    loader.innerHTML = `Painting historical data...`;
-
     // SEND SKELETON TO DUCKDB
     const res = await window.fastAuthFetch("/api/ml/habit-routes/historical", {
       method: "POST",
@@ -6064,29 +6125,29 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     if (result && result.summary) {
-      renderHabitPanelResult(route, result.summary, "leave");
+      renderHabitPanelResult(route, result.summary, "leave", null);
     }
 
     // Update the UI panel with Historical Summary
-    if (result && result.summary) {
-      const s = result.summary;
-      loader.classList.add("hidden");
-      content.classList.remove("hidden");
+    // if (result && result.summary) {
+    //   const s = result.summary;
+    //   loader.classList.add("hidden");
+    //   content.classList.remove("hidden");
 
-      content.innerHTML = `
-            <div style="border: 1px solid #3b82f6; padding: 10px; font-family: sans-serif;">
-                <div style="font-weight: bold; margin-bottom: 5px; color: #1e40af;">
-                    TYPICAL STATE: ${s.status}
-                </div>
-                <div style="font-size: 13px; color: #1e3a8a;">
-                    <div><b>Typical ETA:</b> ${s.predicted_eta}m</div>
-                    <div style="font-size: 10px; margin-top: 4px; color: #64748b;">
-                        Based on 1-month historical data
-                    </div>
-                </div>
-            </div>
-          `;
-    }
+    //   content.innerHTML = `
+    //         <div style="border: 1px solid #3b82f6; padding: 10px; font-family: sans-serif;">
+    //             <div style="font-weight: bold; margin-bottom: 5px; color: #1e40af;">
+    //                 TYPICAL STATE: ${s.status}
+    //             </div>
+    //             <div style="font-size: 13px; color: #1e3a8a;">
+    //                 <div><b>Typical ETA:</b> ${s.predicted_eta}m</div>
+    //                 <div style="font-size: 10px; margin-top: 4px; color: #64748b;">
+    //                     Based on 1-month historical data
+    //                 </div>
+    //             </div>
+    //         </div>
+    //       `;
+    // }
   };
 
   // End Future Plan
@@ -6265,34 +6326,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // HELPER function to calculate fuel cost for Habit Routes -----
   function getFuelCostForHabit(distance_m) {
-    if (!distance_m) return "";
-
+    if (!distance_m) return "0.00";
 
     const consumptionEl = document.getElementById('cost-consumption');
     const consumption = consumptionEl ? parseFloat(consumptionEl.innerText) : 8.0;
-
 
     const fuelSelect = document.getElementById('cost-fuel-grade');
     let fuelPrice = 3.44;
     if (fuelSelect && fuelSelect.selectedIndex >= 0) {
       const selectedText = fuelSelect.options[fuelSelect.selectedIndex].text;
       const parts = selectedText.split("S$");
-
       if (parts.length > 1) {
         fuelPrice = parseFloat(parts[1]);
       }
-      // if (priceMatch) fuelPrice = parseFloat(priceMatch[1]);
     }
 
     const routeKm = distance_m / 1000;
-    const gasCost = ((routeKm / 100) * consumption * fuelPrice).toFixed(2);
-
-    return `
-    <div>
-      ⛽ Est. Fuel: <b style="color:#1e293b;">$${gasCost}</b> 
-      <span style="font-size: 9px;"></span>
-    </div>
-  `;
+    // Return JUST the number string
+    return ((routeKm / 100) * consumption * fuelPrice).toFixed(2);
   }
   // End helper function to calculate fuel cost for habit routes
 
@@ -7263,6 +7314,18 @@ document.addEventListener("DOMContentLoaded", () => {
     if (targetPanel) {
       targetPanel.classList.add("active");
     }
+  });
+
+
+  document.getElementById("map-toggle-hotspots-btn").addEventListener("click", async () => {
+    state.mapHotspotsVisible = !state.mapHotspotsVisible;
+
+    if (state.mapHotspotsVisible && state.mapHotspotsItems.length === 0) {
+      state.mapHotspotsItems = await fetchHotspotMarkers();
+    }
+
+    renderMapHotspotsToggleButton();
+    drawHotspotMarkers();
   });
 
 
@@ -8387,7 +8450,7 @@ document.addEventListener("DOMContentLoaded", () => {
       dot.className = 'dot-green';
     }
 
-    // 3. Check what is actually in the active list
+    // Check what is actually in the active list
     const hasWeather = allAlerts && allAlerts.some(a => a.main === "RAIN AHEAD");
     const hasIncidents = allAlerts && allAlerts.some(a => a.type === 'red' && a.main !== "INCIDENT HOTSPOT");
 
