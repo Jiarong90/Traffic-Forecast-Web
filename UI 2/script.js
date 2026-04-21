@@ -3528,13 +3528,21 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 右侧路线详情面板（普通规划）
-  function showRouteDetails(route) {
+  async function showRouteDetails(route) {
     if (!route) return;
+
+    // + Route Analysis 
+    state.currSelectedRoute = route;
+    const analysisData = await drawHabitRouteOnMap(route);
+    const summary = analysisData ? analysisData.summary : null;
+
+
     const eva = state.routeContext?.evaluation?.evaluations?.get(route.id) || { eventDelayMin: 0, hitCount: 0 };
     const currentFastestId = state.routeContext?.currentFastestId || null;
     const nearbyCameras = (state.routeContext?.events || []).filter(e => distanceToRouteMeters(route.coords, e.lat, e.lon) <= 350).reduce((sum, e) => sum + (e.cameras?.length ? 1 : 0), 0);
-    const totalMinutes = route.estMinutes + eva.eventDelayMin * 0.7;
+    const totalMinutes = summary ? summary.curr_eta : (route.estMinutes + eva.eventDelayMin * 0.7);
     const trafficLevel = eva.eventDelayMin > 18 ? "Heavy" : eva.eventDelayMin > 8 ? "Moderate" : "Light";
+
 
     const setText = (id, text) => {
       const el = document.getElementById(id);
@@ -3549,6 +3557,14 @@ document.addEventListener("DOMContentLoaded", () => {
     setText("route-detail-type", route.id === "fastest" ? "Expressway priority" : route.id === "fewerLights" ? "Intersection-light avoidance" : "Balanced urban route");
     setText("route-detail-speed", `Average speed: ${(route.totalDist / 1000 / (Math.max(totalMinutes, 1) / 60)).toFixed(1)} km/h`);
     setText("route-detail-cameras", `Cameras available: ${nearbyCameras}`);
+
+    if (summary) {
+      setText("route-detail-t15-eta", `${summary.predicted_eta} mins`);
+      setText("route-detail-hotspots", `${state.habitRouteChatContext?.intelligence?.hotspot_count || 0} detected`);
+    } else {
+      setText("route-detail-t15-eta", "--");
+      setText("route-detail-hotspots", "--");
+    }
     updateTripCost(route.totalDist || 0, route.coords || []);
 
     const trafficEl = document.getElementById("route-detail-traffic");
@@ -6009,6 +6025,9 @@ document.addEventListener("DOMContentLoaded", () => {
           stopJourneySimulation();
         }
 
+        if (state.routeLayer) state.routeLayer.clearLayers();
+        if (state.plannerLayer) state.plannerLayer.clearLayers();
+
         // Once a route is loaded, show the analysis panel
         document.getElementById('habit-plan-selected-wrap').style.display = 'block';
 
@@ -6395,16 +6414,45 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const specialist_threshold = data.specialist_threshold || 0.75;
 
-    if (state.routeLayer) state.routeLayer.clearLayers();
-    if (state.plannerLayer) state.plannerLayer.clearLayers();
-    if (state.routePolylines) state.routePolylines.clear();
+    // if (state.routeLayer) state.routeLayer.clearLayers();
+    // if (state.plannerLayer) state.plannerLayer.clearLayers();
+    // if (state.routePolylines) state.routePolylines.clear();
     state.habitRoutePolylineLayer.clearLayers();
+
+    const allLinkIds = (data.match_info?.matched_links || [])
+      .map(l => l.link_id)
+      .filter(id => id != null);
+
+    if (allLinkIds.length > 0) {
+      try {
+        const intelRes = await window.fastAuthFetch('/api/ml/route-intel', {
+          method: "POST",
+          body: JSON.stringify({ link_ids: allLinkIds })
+        });
+
+        if (intelRes.ok) {
+          const intelData = await intelRes.json()
+          state.currentRouteIntel = intelData.details;
+          state.habitRouteChatContext = {
+            ...state.habitRouteChatContext,
+            intelligence: {
+              hotspot_count: intelData.summary.total_hotspots || 0,
+              total_incidents: intelData.summary.total_incidents || 0,
+              weather: intelData.summary.is_raining_anywhere ? "Rainy" : "Clear"
+            }
+          };
+          data.intelSummary = intelData.summary;
+        }
+      } catch (e) { console.log("Intel fetch failed", { e }); }
+    }
 
     const coords = data.coords || route.coords;
     state.currentRouteCoords = coords;
     const matchInfo = data.match_info || {};
     const segmentMatches = matchInfo.segment_matches || [];
     const segments = [];
+
+
 
     // Update the global state
     // Filter rows that match LTA road links
@@ -8027,6 +8075,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let lastRedrawIndex = -1;
   let journeyPollingTimer = null;
 
+  const journeyBtnIds = ['sim-control-btn', 'route-journey-btn'];
+
   async function startJourneySimulation() {
     const route = state.currSelectedRoute;
     if (!route || !route.coords) {
@@ -8084,12 +8134,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Flip the "Start Journey" button to "Stop Journey"
-    const btn = document.getElementById('sim-control-btn');
-    if (btn) {
-      btn.style.background = '#ef4444';
-      btn.textContent = "STOP JOURNEY";
-      btn.setAttribute('onclick', 'stopJourneySimulation()');
-    }
+    journeyBtnIds.forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) {
+        btn.style.background = '#ef4444';
+        btn.textContent = "STOP JOURNEY";
+        btn.setAttribute('onclick', 'stopJourneySimulation()');
+      }
+    });
 
     const carIcon = L.divIcon({
       html: `<div style="width:14px; height:14px; background:#ef4444; border:2px solid white; border-radius:50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`,
@@ -8510,6 +8562,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function openIncidentMlPanel(it) {
 
+    const incidentFingerprint = `${it.lat}_${it.lon}_${it.type}_${it.message.substring(0, 15)}`;
+
     console.log("DEBUG: Function called with data:", it);
     const panel = document.getElementById("incident-ml-panel");
     const badge = document.getElementById("incident-ml-badge");
@@ -8669,7 +8723,102 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="incident-ml-why">
                 <div class="incident-ml-why-title">FEATURE IMPORTANCE (MODEL-WIDE)</div>
                 ${signalHtml} ${footerHtml}
-            </div>`;
+            </div>
+            
+            <div class="incident-ml-feedback-section" style="margin-top: 20px; border-top: 2px solid #f3f4f6; padding-top: 15px;">
+                <div style="font-size: 13px; font-weight: 700; color: #1e293b; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                    💬 Feedback
+                </div>
+
+                <div id="mini-fb-form" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
+                    <div style="font-size: 11px; color: #64748b; margin-bottom: 8px; font-weight: 600; text-transform: uppercase;">Incident Active?</div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                        <button class="mini-fb-type-btn" data-type="ACTIVE" style="padding: 6px; font-size: 11px; border: 1px solid #cbd5e1; border-radius: 4px; background: white; cursor: pointer;">Active</button>
+                        <button class="mini-fb-type-btn" data-type="CLEAR" style="padding: 6px; font-size: 11px; border: 1px solid #cbd5e1; border-radius: 4px; background: white; cursor: pointer;">Cleared</button>
+                    </div>
+
+                    <textarea id="mini-fb-comment" placeholder="Add details..." style="width: 100%; border: 1px solid #cbd5e1; border-radius: 4px; padding: 6px; font-size: 12px; height: 50px; margin-bottom: 8px; box-sizing: border-box;"></textarea>
+                    
+                    <button id="mini-fb-submit" style="width: 100%; background: #1e293b; color: white; border: none; padding: 8px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">
+                        POST FEEDBACK
+                    </button>
+                </div>
+
+                <div id="mini-fb-list" style="max-height: 200px; overflow-y: auto;">
+                    <div style="font-size: 11px; color: #94a3b8; text-align: center; padding: 10px;">Loading updates...</div>
+                </div>
+            </div>
+            `;
+
+      // For Feedback
+      async function loadCommunityUpdates() {
+        try {
+          const res = await window.fastAuthFetch('/api/ml/feedback/list', {
+            method: 'POST',
+            body: JSON.stringify({ location: incidentFingerprint })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const listEl = document.getElementById('mini-fb-list');
+
+            if (data.reports && data.reports.length > 0) {
+              listEl.innerHTML = data.reports.map(fb => `
+                    <div style="margin-bottom: 8px; padding: 10px; background: white; border-radius: 6px; border-left: 3px solid ${fb.condition_type === 'CLEAR' ? '#22c55e' : '#f59e0b'};">
+                        <div style="font-size: 9px; font-weight: 800; color: #1e293b;">
+                            ${fb.condition_type.replace('_', ' ')} · ${new Date(fb.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                        <div style="font-size: 11px; color: #475569;">${escapeHtml(fb.comment)}</div>
+                    </div>
+                `).join("");
+            } else {
+              listEl.innerHTML = `<div style="font-size: 11px; color: #94a3b8; text-align: center; padding: 10px;">No updates yet. Be the first!</div>`;
+            }
+          }
+        } catch (e) { console.error("Load failed", e); }
+      }
+
+      // Trigger the load immediately after HTML is set
+      loadCommunityUpdates();
+
+      // Submit Button Logic
+      const submitBtn = document.getElementById('mini-fb-submit');
+      if (submitBtn) {
+        submitBtn.onclick = async () => {
+          const comment = document.getElementById('mini-fb-comment').value;
+          const type = document.querySelector('.mini-fb-type-btn.active')?.dataset.type || "UPDATE";
+
+          if (!comment.trim()) return;
+
+          try {
+            const res = await window.fastAuthFetch('/api/ml/feedback/save', {
+              method: 'POST',
+              body: JSON.stringify({
+                location: incidentFingerprint,
+                condition_type: type,
+                comment: comment,
+                lat: it.lat,
+                lon: it.lon
+              })
+            });
+
+            if (res.ok) {
+              document.getElementById('mini-fb-comment').value = "";
+              loadCommunityUpdates();
+            }
+          } catch (e) { console.error("Save failed", e); }
+        };
+      }
+
+      // Button Toggles
+      document.querySelectorAll('.mini-fb-type-btn').forEach(btn => {
+        btn.onclick = function () {
+          document.querySelectorAll('.mini-fb-type-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          btn.style.background = '#e2e8f0';
+        };
+      });
+
 
 
       console.log("DEBUG: ML Payload received:", ml);

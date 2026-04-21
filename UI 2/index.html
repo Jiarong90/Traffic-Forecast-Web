@@ -119,14 +119,14 @@
               </article>
               <article class="home-pricing-card home-pricing-card-featured">
                 <div class="home-pricing-head">
-                  <span class="home-pricing-tier">ADVANCED USER</span>
+                  <span class="home-pricing-tier">PREMIUM USER</span>
                   <strong class="home-pricing-price">S$30 / month</strong>
                 </div>
                 <ul class="home-pricing-list">
-                  <li>All free-user functions</li>
-                  <li>Additional premium permissions</li>
-                  <li>More advanced premium permissions</li>
-                  <li>More service access to be added later</li>
+                  <li>Save your favorite routes</li>
+                  <li>Get personalized alerts for your routes</li>
+                  <li>Access your personal AI assistant</li>
+                  <li>More service access to be added </li>
                   <li>Additional business-side access to be added later</li>
                 </ul>
               </article>
@@ -380,7 +380,7 @@ Currently studying at University of Wollongong.">
         <p class="profile-membership-sub" id="profile-membership-sub">Current plan details</p>
         <div class="profile-membership-list" id="profile-membership-list"></div>
         <div class="profile-membership-upgrade hidden" id="profile-membership-upgrade">
-          <p class="profile-membership-paynote">Scan the PayNow QR code below to upgrade to Advanced User for 30 days.
+          <p class="profile-membership-paynote">Scan the PayNow QR code below to upgrade to Premium User for 30 days.
           </p>
           <img src="assets/images/paynow.jpg" alt="PayNow QR" class="profile-membership-qr" />
           <button type="button" class="btn-dark full" id="profile-membership-confirm-btn">I HAVE COMPLETED
@@ -848,6 +848,14 @@ Currently studying at University of Wollongong.">
             <div class="panel-row"><span class="label">DISTANCE</span><span id="route-detail-distance">--</span></div>
             <div class="panel-row"><span class="label">EXTRA DELAY</span><span id="route-detail-delay">--</span></div>
             <div class="panel-row">
+              <span class="label">T+15 ETA</span>
+              <b id="route-detail-t15-eta" style="color: #3b82f6;">--</b>
+            </div>
+            <div class="panel-row">
+              <span class="label">HOTSPOTS</span>
+              <b id="route-detail-hotspots">--</b>
+            </div>
+            <div class="panel-row">
               <span class="label">TRAFFIC</span>
               <span id="route-detail-traffic"><span class="dot green"></span> --</span>
             </div>
@@ -865,6 +873,10 @@ Currently studying at University of Wollongong.">
               <p id="route-detail-cameras">Cameras available: --</p>
             </div>
             <button type="button" class="btn-dark full" id="route-confirm-btn">USE THIS ROUTE</button>
+            <button type="button" class="btn-dark full" id="route-journey-btn" onclick="startJourneySimulation()"
+              style="background: #2563eb; margin-top: 10px;">
+              START LIVE JOURNEY
+            </button>
             <button type="button" class="btn-dark full" id="route-view-cameras-btn">VIEW LIVE CAMERAS</button>
 
             <div class="cost-panel" id="cost-panel">
