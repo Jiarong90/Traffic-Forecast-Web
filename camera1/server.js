@@ -937,11 +937,11 @@ const mlGatekeeper = (req, res, next) => {
   const publicPaths = ['expressway-forecast', 'map-hotspots', 'hotspots'];
 
   if (publicPaths.includes(req.mlSubPath)) {
-    console.log(`🔓 Public Access: ${req.mlSubPath}`);
-    return next(); 
+    console.log(`Public Access: ${req.mlSubPath}`);
+    return next();
   }
 
-  console.log(`🔒 Protected Access: ${req.mlSubPath}`);
+  console.log(`Protected Access: ${req.mlSubPath}`);
   return requireAuth(req, res, next);
 };
 
@@ -3929,6 +3929,33 @@ app.post('/api/recalculate', requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Recalculation failed:", error.message);
     res.status(500).json({ error: "Engine failed to reroute" });
+  }
+});
+
+// Feedback in incident panel
+app.post('/api/feedback/list', requireAuth, async (req, res) => {
+  try {
+    const data = await callFastApiJson('/api/feedback/list', req.body);
+    res.json(data);
+  } catch (error) {
+    console.error('Failed to load feedback:', error.message);
+    res.status(500).json({ error: 'Failed to load feedback' });
+  }
+});
+
+app.post('/api/feedback/save', requireAuth, async (req, res) => {
+  try {
+
+    const payloadToPython = {
+      ...req.body,
+      user_id: req.session.user.id
+    };
+
+    const data = await callFastApiJson('/api/feedback/save', payloadToPython);
+    res.json(data);
+  } catch (error) {
+    console.error('Failed to save feedback:', error.message);
+    res.status(500).json({ error: 'Failed to save feedback' });
   }
 });
 
