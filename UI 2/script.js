@@ -5804,7 +5804,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const helper = document.getElementById("habit-plan-helper");
     if (!panel) return;
 
-    const name = route.route_name || `${route.from} → ${route.to}`;
+    const name = route.route_name || `${route.from_label} → ${route.to_label}`;
     const holiday = extra.holidayName
       ? `<div style="color: #ea580c; background: #fff7ed; padding: 4px 8px; border-radius: 4px; border: 1px solid #fdba74; font-size: 11px; font-weight: bold; margin-bottom: 8px; display: inline-block;">
              ${extra.holidayName} (Holiday)
@@ -6384,6 +6384,9 @@ document.addEventListener("DOMContentLoaded", () => {
     let route_name = route.route_name || "Unnamed Route";
     let from = route.from || "";
     let to = route.to || "";
+    state.habitRouteJams = {};
+    state.activeRoutePins = [];
+    state.selectedJamPinID = null;
 
     // Reset  state.habitRouteJams
     state.habitRouteJams = {}
@@ -6433,6 +6436,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (intelRes.ok) {
           const intelData = await intelRes.json()
           state.currentRouteIntel = intelData.details;
+          state.currentRouteIntelSummary = intelData.summary;
           state.habitRouteChatContext = {
             ...state.habitRouteChatContext,
             intelligence: {
@@ -6618,7 +6622,10 @@ document.addEventListener("DOMContentLoaded", () => {
           jamMarker.addTo(state.habitRoutePolylineLayer);
 
           // Save to the jam-pin mapping
-          state.activeRoutePins.push(j);
+          state.activeRoutePins.push({
+            link_id: matchData.link_id,
+            segmentIndex: j
+          });
 
           route_jam_pins.push({
             index: num_jams,
@@ -6702,13 +6709,13 @@ document.addEventListener("DOMContentLoaded", () => {
       num_jams: num_jams,
       route_jam_pins: route_jam_pins,
       intelligence: {
-        total_incidents: state.currentRouteIntelSummary?.total_incidents || 0,
+        total_incidents: state.currentRouteIntelSummary.total_incidents || 0,
         weather: state.currentRouteIntelSummary?.is_raining_anywhere ? "Rainy" : "Clear",
         hotspot_count: state.currentRouteIntelSummary?.total_hotspots || 0,
         risk_level: (state.currentRouteIntelSummary?.total_hotspots > 20) ? "High" : "Normal"
       }
     }
-
+    state.activeRoutePins.sort((a, b) => a.segmentIndex - b.segmentIndex);
     state.currSelectedRoute = route;
     state.currMatchInfo = data.match_info
     return data;
@@ -7064,6 +7071,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function simulateReroute(jammedId, segmentIndex) {
 
     const coords = state.currentRouteCoords;
+    const segmentMatches = state.currMatchInfo?.segment_matches;
     if (!coords || coords.length < 2) {
       console.log("Coords not found")
       return {
@@ -7087,18 +7095,35 @@ document.addEventListener("DOMContentLoaded", () => {
     const step = 5;
     const dest = coords[coords.length - 1];
     for (let idx = segmentIndex; idx >= 0; idx -= step) {
+
+      const distBack = getDistanceKm(coords[idx], coords[segmentIndex]);
+
+      if (distBack > 3.0) {
+        console.log("Search limit reached: No local exits found within 3km.");
+        break;
+      }
       // Find the anchor, the reroute point for the alternate route
-      const anchorIdx = Math.max(0, segmentIndex - 10);
+      const anchorIdx = Math.max(0, idx - 10);
       const anchor = coords[anchorIdx];
       if (!anchor) {
         console.log("No anchor")
         continue;
       }
 
+      const blockedList = [];
+      const buffer = 10;
+
+      for (let i = 0; i < buffer; i++) {
+        const m = segmentMatches[segmentIndex + i];
+        if (m && m.link_id) {
+          blockedList.push(String(m.link_id));
+        }
+      }
+
       const payload = {
         start: { lat: anchor[0], lon: anchor[1] },
         end: { lat: dest[0], lon: dest[1] },
-        blocked_edges: [String(jammedId)]
+        blocked_edges: blockedList
       };
 
       try {
@@ -7170,8 +7195,12 @@ document.addEventListener("DOMContentLoaded", () => {
       //   coords: mergedCoords
       // });
 
-      return;
+
     }
+    return {
+      success: false,
+      message: "Sorry, I couldn't find an alternative route."
+    };
   }
   window.simulateReroute = simulateReroute;
 
@@ -7225,11 +7254,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const card = document.createElement("div");
     card.id = "altroute-decision-card";
-    card.style = `
-          position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); 
-          z-index: 1000; background: white; padding: 16px; border-radius: 12px; 
-          box-shadow: 0 10px 25px rgba(0,0,0,0.2); font-family: 'Inter', sans-serif; 
-          min-width: 280px; border: 2px solid #0ea5e9;
+    card.style.cssText = `
+          position: absolute; 
+          bottom: 20px; 
+          left: 20px; 
+          z-index: 2000; 
+          background: white; 
+          padding: 16px; 
+          border-radius: 12px; 
+          box-shadow: 0 10px 25px rgba(0,0,0,0.3); 
+          font-family: 'Inter', sans-serif; 
+          min-width: 280px; 
+          border: 2px solid #0ea5e9;
       `;
 
     card.innerHTML = `
@@ -7329,9 +7365,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (card)
       card.remove();
     state.previewDetourLayer.clearLayers();
-    if (state.habitRoutePolylineLayer) {
-      state.plannerMap.fitBounds(state.habitRoutePolylineLayer.getBounds(), { padding: [40, 40] });
-    }
+    window.updateChatbotContext({
+      mode: "awaiting_jam_reroute",
+      selected_map_pin: state.selectedJamPinID,
+      description: "The user rejected the reroute. You are still looking at the jam pin. You can try to reroute again or select another pin."
+    });
     window.playSimulationLoop();
   }
 
@@ -7598,9 +7636,158 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   // End Incident Hotspots Section
 
+  // CHATBOT : VOICE FUNCTION
+  const micBtn = document.getElementById('mic-btn');
+  const chatInput = document.getElementById('chat-input');
+
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (Recognition) {
+    const recognition = new Recognition();
+
+    recognition.lang = 'en-SG';
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    let finalTranscript = "";
+    let isListening = false;
+    let cancelAutoSend = false;
+
+    micBtn.addEventListener('click', () => {
+      if (isListening) {
+        cancelAutoSend = true;
+        recognition.stop();
+        return;
+      }
+
+      finalTranscript = "";
+      cancelAutoSend = false;
+      recognition.start();
+    });
+
+    recognition.onstart = () => {
+      isListening = true;
+      micBtn.style.backgroundColor = '#ef4444';
+    };
+
+    recognition.onresult = (event) => {
+      let interimTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const text = event.results[i][0].transcript;
+
+        if (event.results[i].isFinal) {
+          finalTranscript += text + " ";
+        } else {
+          interimTranscript += text;
+        }
+      }
+
+      chatInput.value = (finalTranscript + interimTranscript).trim();
+    };
+
+    recognition.onend = () => {
+      isListening = false;
+      micBtn.style.backgroundColor = '';
+
+      const text = chatInput.value.trim();
+
+      if (!cancelAutoSend && text.length > 2) {
+        setTimeout(() => {
+          if (chatInput.value.trim() === text) {
+            sendChatMessage();
+          }
+        }, 600);
+      }
+    };
+
+    recognition.onerror = (e) => {
+      console.error("Speech error:", e);
+    };
+  }
+
+  const ttsToggle = document.getElementById('tts-toggle');
+
+  let voices = [];
+
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => {
+    voices = window.speechSynthesis.getVoices();
+    console.log("Voices loaded:", voices.length);
+  };
+
+  function speak(text) {
+    const ttsEnabled = document.getElementById('tts-toggle')?.checked;
+    if (!ttsEnabled || !text) return;
+
+    playBeep('end');
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+
+    if (voices.length === 0) voices = window.speechSynthesis.getVoices();
+
+
+    const ukFemale = voices.find(v => v.name === "Google UK English Female") ||
+      voices.find(v => v.name.includes("UK") && v.name.includes("Female")) ||
+      voices.find(v => v.lang === "en-GB" || v.lang === "en_GB");
+
+    if (ukFemale) {
+      utterance.voice = ukFemale;
+    }
+
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function playBeep(type = 'start') {
+    if (!document.getElementById('tts-toggle')?.checked) return;
+
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+
+    if (type === 'start') {
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
+    } else {
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.1);
+    }
+
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  }
+  // CHATBOT END VOICE FUNCTION
+
   let chatHistory = []
 
   // CHATBOT: send message and capture the response
+
+  function scrollToBottom() {
+    const msgContainer = document.getElementById('chat-messages');
+    if (!msgContainer) return;
+
+    // This ensures the browser has rendered the new HTML first
+    requestAnimationFrame(() => {
+      msgContainer.scrollTo({
+        top: msgContainer.scrollHeight,
+        behavior: 'smooth' // Optional: makes it feel more polished
+      });
+    });
+  }
+
+
   async function sendChatMessage() {
     const input = document.getElementById('chat-input');
     const msgContainer = document.getElementById('chat-messages');
@@ -7611,6 +7798,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     msgContainer.innerHTML += `<div><b>You:</b> ${text}</div>`;
     input.value = '';
+    scrollToBottom();
 
     const res = await window.fastAuthFetch("/api/chat", {
       method: "POST",
@@ -7626,12 +7814,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (data.text) {
         msgContainer.innerHTML += `<div><b>FASTbot:</b> ${data.text}</div>`;
         finalBotText += data.text;
+        scrollToBottom();
       }
 
       const actionResult = await dispatchBotAction(data);
       if (actionResult?.followUpText) {
         msgContainer.innerHTML += `<div><b>FASTbot:</b> ${actionResult?.followUpText}</div>`;
         finalBotText += (finalBotText ? "\n" : "") + actionResult.followUpText;
+        scrollToBottom();
       }
       if (actionResult?.chatContext) {
         chatHistory.push({
@@ -7643,6 +7833,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       msgContainer.innerHTML += `<div><b>FASTbot:</b> ${data.text}</div>`;
       finalBotText = data.text || "";
+      scrollToBottom();
     }
     msgContainer.scrollTop = msgContainer.scrollHeight;
 
@@ -7651,6 +7842,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (finalBotText) {
       chatHistory.push({ role: "model", parts: [{ text: finalBotText }] });
+      speak(finalBotText);
     }
 
   }
@@ -7716,14 +7908,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
         let route = null;
 
-        if (typeof route_index === "number") {
+        if (!Number.isNaN(route_index) && route_index > 0) {
           route = state.habitRouteSelectionContext?.[route_index - 1]
         }
 
         else if (route_name) {
-          route = state.habitRouteSelectionContext?.find(r => {
-            r.route_name.toLowerCase().includes(route_name.toLowerCase());
-          });
+          route = state.habitRouteSelectionContext?.find(r =>
+            (r.route_name || "").toLowerCase().includes(route_name.toLowerCase())
+          );
         }
 
         if (!route) {
@@ -7733,7 +7925,23 @@ document.addEventListener("DOMContentLoaded", () => {
           };
         }
 
-        await drawHabitRouteOnMap(route);
+        const result = await drawHabitRouteOnMap(route);
+        document.getElementById('habit-plan-selected-wrap').style.display = 'block';
+
+        try {
+          const intelRes = await window.fastAuthFetch(`/api/ml/route-intel`, {
+            method: "POST",
+            body: JSON.stringify({ link_ids: route.link_ids })
+          });
+          const intelData = await intelRes.json();
+
+          if (result && result.summary) {
+            renderHabitPanelResult(route, result.summary, "now", intelData);
+          }
+        } catch (err) {
+          console.error("Bot failed to load intel", err);
+        }
+
 
         return {
           followUpText: `Loaded route ${route.route_name}. You can now view details about the route.`,
@@ -7755,22 +7963,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Get the string provided by the backend
         const raw_index = String(data.params?.jam_index).toLowerCase();
-
-        // The index of jam
+        const currentLinkId = state.selectedJamPinID ? parseInt(state.selectedJamPinID.replace("jam-pin-", "")) : null;
+        const currentIndexInList = state.activeRoutePins.findIndex(p => p.link_id === currentLinkId);
         let jam_index;
-
-        if (raw_index === "next" || raw_index === "next one") {
-          const currNum = parseInt(state.selectedJamPinID)
-          jam_index = currNum + 1
-        }
-        else if (raw_index === "previous" || raw_index === "prev") {
-          const currNum = parseInt(state.selectedJamPinID);
-          jam_index = currNum - 1;
-        }
-        else {
+        // The index of jam
+        if (raw_index.includes("next")) {
+          jam_index = currentIndexInList + 2;
+        } else if (raw_index.includes("prev")) {
+          jam_index = currentIndexInList;
+        } else {
           jam_index = Number(raw_index);
         }
-
+        jam_index = Math.max(1, Math.min(jam_index, state.activeRoutePins.length));
         // Open the popup using the jam index
         const jam_res = await selectHabitJam(jam_index);
 
@@ -7782,7 +7986,7 @@ document.addEventListener("DOMContentLoaded", () => {
           jam_fail_text = "No route selected! Please select a route first."
         }
         // Failure type: There are no jams detected on the selected route
-        else if (!state.habitRouteChatContext?.route_index?.length) {
+        else if (!state.habitRouteChatContext?.route_jam_pins?.length) {
           jam_fail_text = "There are no jams on this road!"
         }
         // Failure type: The number user provided is out of index range, more than num of jams 
@@ -7794,7 +7998,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (jam_res) {
           return {
             followUpText: `Selected jam! Would you like to change paths to avoid this jam?`,
-            chatRouteContext: JSON.stringify({
+            chatContext: JSON.stringify({
               chat_context: {
                 mode: "awaiting_jam_reroute",
                 expected_action: "reroute_jam, habit_route_select_jam",
@@ -7818,7 +8022,6 @@ document.addEventListener("DOMContentLoaded", () => {
       case "reroute_from_jam": {
         const jam_index = state.selectedJamPinID;
 
-
         // Failure type: User has not selected a route yet
         if (!state.currSelectedRoute) {
           return { followUpText: "No route selected! Please select a route first.", chatContext: null };
@@ -7829,7 +8032,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // Get the jam object based on jam index
-        jam_context = state.habitRouteJams[`jam-pin-${jam_index}`];
+        jam_context = state.habitRouteJams[`${jam_index}`];
         // Retrieve link_id and segment
         jam_link_id = jam_context.link_id;
         jam_segment = jam_context.segment_index;
@@ -7957,7 +8160,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return "No active jam!"
     }
 
-    const systemPinID = `jam-pin-${targetJam}`;
+    const systemPinID = `jam-pin-${targetJam.link_id}`;
     const jam = state.habitRouteJams[systemPinID];
     if (!jam || !jam.pin) {
       return false;
@@ -8348,7 +8551,7 @@ document.addEventListener("DOMContentLoaded", () => {
       state.habitRoutePinLayer.eachLayer((layer) => {
         if (layer.segmentIndex != undefined && layer.segmentIndex < currentIndex) {
           state.habitRoutePinLayer.removeLayer(layer);
-          state.activeRoutePins = state.activeRoutePins.filter(j => j !== layer.segmentIndex);
+          state.activeRoutePins = state.activeRoutePins.filter(p => p.segmentIndex !== layer.segmentIndex);
 
           delete state.habitRouteJams[`jam-pin-${layer.link_id}`];
 
@@ -8590,8 +8793,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (simPin) {
               simPin.addTo(state.habitRoutePinLayer);
 
-              state.activeRoutePins.push(j);
-              state.activeRoutePins.sort((a, b) => a - b);
+              state.activeRoutePins.push({
+                link_id: matchData.link_id,
+                segmentIndex: j
+              });
+              state.activeRoutePins.sort((a, b) => a.segmentIndex - b.segmentIndex);
 
               state.habitRouteJams[systemPinID] = {
                 index: pinIndex,
@@ -9134,6 +9340,14 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // END MUHSIN'S PART
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/ui2/sw.js", { scope: "/ui2/" })
+        .then(() => console.log("Service worker registered"))
+        .catch(err => console.error("Service worker failed:", err));
+    });
+  }
   // 模块真实启动点
   document.addEventListener("DOMContentLoaded", bootstrapDemo);
 })();
