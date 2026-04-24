@@ -1,7 +1,7 @@
 {
   "name": "FAST Traffic Forecast",
   "short_name": "FAST",
-  "start_url": "/ui2/",
+  "start_url": "/ui2/#home",
   "scope": "/ui2/",
   "display": "standalone",
   "background_color": "#f8fafc",
