@@ -7,6 +7,8 @@
   <title>FAST - Traffic Forecasting Web App</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="manifest" href="/ui2/manifest.json">
+  <meta name="theme-color" content="#2563eb">
 </head>
 
 <body>
@@ -1463,6 +1465,12 @@ Currently studying at University of Wollongong.">
     <div class="ai-chat-header">
       <span>FASTbot</span>
       <button type="button" id="ai-chat-close" class="ai-chat-close">×</button>
+    </div>
+    <div class="ai-chat-controls"
+      style="padding: 5px 12px; border-top: 1px solid #eee; display: flex; align-items: center; gap: 8px;">
+      <input type="checkbox" id="tts-toggle" checked style="cursor: pointer;" />
+      <label for="tts-toggle" style="font-size: 11px; color: #64748b; cursor: pointer; user-select: none;">Read
+        responses aloud</label>
     </div>
     <div id="chat-messages" class="ai-chat-messages">
       <div class="ai-chat-system">Good day. I'm here to help!</div>
