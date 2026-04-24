@@ -1,21 +1,23 @@
 {
-  "name": "FAST Traffic Forecast",
-  "short_name": "FAST",
-  "start_url": "/ui2/#home",
-  "scope": "/ui2/",
-  "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#2563eb",
-  "icons": [
-  {
-    "src": "/ui2/assets/images/logo-192.png",
-    "sizes": "192x192",
-    "type": "image/png"
-  },
-  {
-    "src": "/ui2/assets/images/logo-512.png",
-    "sizes": "512x512",
-    "type": "image/png"
-  }
-]
+    "name": "FAST Traffic Forecast",
+    "short_name": "FAST",
+    "start_url": "/ui2/#home",
+    "scope": "/ui2/",
+    "display": "standalone",
+    "background_color": "#f8fafc",
+    "theme_color": "#2563eb",
+    "icons": [
+        {
+            "src": "/ui2/assets/images/logo-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/ui2/assets/images/logo-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        }
+    ]
 }
