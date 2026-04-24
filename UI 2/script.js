@@ -8451,11 +8451,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Draw horizon divider
         if (minsAheadAccumulator > 15 && !horizonDrawn) {
-            L.marker([coords[j][0], coords[j][1]], {
-                interactive: false, // Let clicks pass through to the road
-                icon: L.divIcon({
-                    className: 'horizon-divider-pin',
-                    html: `
+          L.marker([coords[j][0], coords[j][1]], {
+            interactive: false, // Let clicks pass through to the road
+            icon: L.divIcon({
+              className: 'horizon-divider-pin',
+              html: `
                         <div style="
                             display: flex; 
                             align-items: center; 
@@ -8480,17 +8480,17 @@ document.addEventListener("DOMContentLoaded", () => {
                             <div style="width: 20px; height: 2px; background: #94a3b8;"></div>
                         </div>
                     `,
-                    iconSize: [0, 0]
-                })
-            }).addTo(state.habitRoutePolylineLayer);
-            
-            horizonDrawn = true; 
+              iconSize: [0, 0]
+            })
+          }).addTo(state.habitRoutePolylineLayer);
+
+          horizonDrawn = true;
         }
 
         if (minsAheadAccumulator <= 60 && p) {
           const linkId = matchData.link_id;
           const intel = state.currentRouteIntel ? state.currentRouteIntel[segmentMatches[j].link_id] : null;
-          
+
           const currentVal = parseInt(p.current_val);
           const predictedVal = parseInt(p.predicted_val);
           const bandChange = currentVal - predictedVal;
@@ -9122,6 +9122,16 @@ document.addEventListener("DOMContentLoaded", () => {
       body.innerHTML = '<div style="color:#9ca3af;font-size:12px;padding:8px 0;">ML assessment unavailable</div>';
     }
   }
+
+  document.getElementById("mobile-menu-btn")?.addEventListener("click", () => {
+    document.getElementById("mobile-menu-panel")?.classList.toggle("hidden");
+  });
+
+  document.querySelectorAll("#mobile-menu-panel a").forEach(link => {
+    link.addEventListener("click", () => {
+      document.getElementById("mobile-menu-panel")?.classList.add("hidden");
+    });
+  });
 
   // END MUHSIN'S PART
   // 模块真实启动点
