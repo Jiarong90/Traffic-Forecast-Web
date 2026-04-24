@@ -135,42 +135,136 @@ body {
 .icon-rain { width: 32px; height: 32px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b9dc7' stroke-width='2'%3E%3Cpath d='M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z'/%3E%3Cpath d='M10 22v-4'/%3E%3Cpath d='M14 22v-4'/%3E%3Cpath d='M12 18v-4'/%3E%3C/svg%3E") center/contain no-repeat; }
 
 /* 主导航 */
-.main-nav {
+
+.modern-navbar {
   display: flex;
-  gap: 10px;
-  padding: 12px 24px 14px;
-  border-bottom: 1px solid #dbeafe;
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(239, 246, 255, 0.92) 100%);
-}
-.nav-tab {
-  padding: 12px 20px;
-  text-decoration: none;
-  color: #dbeafe;
-  font-size: 14px;
-  font-weight: 700;
-  border: 1px solid rgba(147, 197, 253, 0.42);
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(30, 64, 175, 0.42) 0%, rgba(14, 116, 144, 0.28) 100%);
-  box-shadow: 0 12px 26px rgba(30, 64, 175, 0.14), inset 0 1px 0 rgba(255,255,255,0.2);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
-}
-.nav-tab:hover {
-  color: #ffffff;
-  background: linear-gradient(180deg, rgba(29, 78, 216, 0.58) 0%, rgba(8, 145, 178, 0.38) 100%);
-  border-color: rgba(191, 219, 254, 0.6);
-  box-shadow: 0 16px 30px rgba(37, 99, 235, 0.2), inset 0 1px 0 rgba(255,255,255,0.24);
-  transform: translateY(-1px);
-}
-.nav-tab.active {
-  color: #ffffff;
-  font-weight: 800;
-  background: var(--glass-blue-bg-strong);
-  border-color: rgba(219, 234, 254, 0.72);
-  box-shadow: 0 18px 34px rgba(37, 99, 235, 0.24), inset 0 1px 0 rgba(255,255,255,0.28);
+  justify-content: flex-start;
+  align-items: center; 
+  padding: 0 24px;
+  min-height: 88px; 
+  background-color: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  gap: 48px;
 }
 
+.modern-navbar .nav-tab, 
+.modern-navbar .nav-dropbtn {
+  display: flex !important;
+  align-items: center !important;
+  height: 48px !important;
+  box-sizing: border-box !important;
+}
+
+.modern-navbar .brand-logo-img {
+  height: 52px !important; 
+  width: auto !important;
+  margin-bottom: 0 !important;
+}
+
+.nav-center {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  
+}
+
+.modern-navbar .header-right {
+  display: flex !important;
+  align-items: center !important;
+  height: 100% !important;
+  margin: 0 0 0 auto !important; 
+}
+
+
+.nav-tab {
+  text-decoration: none;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 14px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  border-bottom: 2px solid transparent; 
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  padding: 0 4px;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.nav-tab:hover {
+  color: #0f172a;
+  background: none;
+  box-shadow: none;
+  transform: none;
+}
+
+.nav-tab.active {
+  color: #2563eb; 
+  font-weight: 700;
+  background: none;
+  box-shadow: none;
+  border-bottom: 2px solid #2563eb;
+}
+
+.nav-dropdown {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.nav-dropbtn {
+  color: #64748b;
+  font-weight: 600;
+  font-size: 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+  height: 100%;
+}
+
+.nav-dropdown:hover .nav-dropbtn {
+  color: #0f172a;
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  top: 64px;
+  left: 0;
+  background-color: #ffffff;
+  min-width: 180px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  border-radius: 0 0 8px 8px;
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.dropdown-content a {
+  color: #475569;
+  padding: 12px 16px;
+  text-decoration: none;
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.1s;
+}
+
+.dropdown-content a:hover {
+  background-color: #f8fafc;
+  color: #2563eb;
+}
+
+.nav-dropdown:hover .dropdown-content {
+  display: block;
+}
 /* 页面容器 */
 .page {
   display: none;
@@ -2560,6 +2654,24 @@ body {
     line-height: 1.4;
 }
 
+.vms-label-pin {
+    background: none !important;
+    border: none !important;
+}
+
+.vms-label-pin span {
+    color: #1e293b;
+    font-weight: 800;
+    font-size: 11px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    text-shadow: 
+        1px 1px 0 #fff, -1px -1px 0 #fff, 
+        1px -1px 0 #fff, -1px 1px 0 #fff,
+        0 1px 0 #fff, 0 -1px 0 #fff;
+    transform: translate(-50%, -50%);
+    display: block;
+}
 /* The outlined button from your screenshot */
 .btn-dismiss-alert {
     width: 100%;

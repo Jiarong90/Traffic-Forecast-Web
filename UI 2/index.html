@@ -12,22 +12,38 @@
 <body>
   <div class="app">
     <!-- 顶栏 -->
-    <header class="header">
+    <header class="header modern-navbar">
+
       <div class="logo">
         <img src="assets/images/logo2.jpg" alt="FAST Logo" class="brand-logo-img"
           onerror="this.style.display='none';this.nextElementSibling.style.display='inline';" />
         <span class="brand-logo-text">FAST</span>
       </div>
-      <div class="header-center-links">
-        <a href="#home" class="header-center-link" id="header-home-link">HOME</a>
-        <a href="#about" class="header-center-link" id="header-about-link">ABOUT</a>
-        <a href="#home" class="header-center-link" id="header-business-link">BUSINESS MODEL</a>
-      </div>
+
+      <nav class="main-nav nav-center" id="main-nav">
+        <a href="#dashboard" class="nav-tab active" data-page="dashboard">Dashboard</a>
+        <a href="#map-view" class="nav-tab" data-page="map-view">Map View</a>
+        <a href="#route-planner" id="nav-route-planner-btn" class="nav-tab" data-page="route-planner">Route Planner</a>
+        <a href="#weather" class="nav-tab" data-page="weather">Weather</a>
+        <!-- <a href="#habit-routes" id="nav-habit-routes-btn" class="nav-tab" data-page="habit-routes">Habit Routes</a> -->
+        <a href="#alerts" class="nav-tab" data-page="alerts">Alerts</a>
+
+        <div class="nav-dropdown">
+          <button class="nav-dropbtn">About Us ▾</button>
+          <div class="dropdown-content">
+            <a href="#home" id="header-home-link">Home</a>
+            <a href="#about" id="header-about-link">About FAST</a>
+            <a href="#home" id="header-business-link">Business Model</a>
+          </div>
+        </div>
+        <a href="#admin-users" class="nav-tab hidden" data-page="admin-users" id="admin-users-tab">Admin Users</a>
+
+      </nav>
+
       <div class="header-right">
         <div class="alerts-dropdown-wrap" id="alerts-toggle">
           <span class="icon-bell"></span>
           <span id="nav-alert-badge" class="nav-badge hidden">0</span>
-
           <div class="alerts-nav-dropdown hidden" id="alerts-nav-dropdown">
             <div class="dropdown-header"></div>
             <ul id="nav-alerts-list">
@@ -40,7 +56,7 @@
           <a href="#signup" class="btn-header-secondary" id="header-signup-btn">SIGN UP</a>
           <a href="#login" class="btn-header-login" id="header-login-btn">LOGIN</a>
         </div>
-        <!-- 已登录：显示头像与下拉 -->
+
         <div class="user-menu-wrap hidden" id="user-menu-wrap">
           <span class="icon-user" id="user-avatar-btn" title="Account"></span>
           <span class="icon-chevron-down" id="user-chevron"></span>
@@ -58,17 +74,7 @@
     </header>
 
     <!-- 主导航 -->
-    <nav class="main-nav" id="main-nav">
-      <a href="#dashboard" class="nav-tab active" data-page="dashboard">Dashboard</a>
-      <a href="#map-view" class="nav-tab" data-page="map-view">Map View</a>
-      <a href="#route-planner" id="nav-route-planner-btn" class="nav-tab" data-page="route-planner">Route Planner</a>
-      <a href="#weather" class="nav-tab" data-page="weather">Weather</a>
-      <!-- Habit Routes part add-on -->
-      <a href="#habit-routes" id="nav-habit-routes-btn" class="nav-tab" data-page="habit-routes">Habit Routes</a>
 
-      <a href="#alerts" class="nav-tab" data-page="alerts">Alerts</a>
-      <a href="#admin-users" class="nav-tab hidden" data-page="admin-users" id="admin-users-tab">Admin Users</a>
-    </nav>
 
     <main id="home" class="page active public-home-page">
       <div class="home-scroll-deck" id="home-scroll-deck">

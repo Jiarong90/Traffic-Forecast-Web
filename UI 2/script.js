@@ -6480,9 +6480,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Helper for line colors based on speedbands
     const getBandColor = (b) => {
-      if (b <= 3) return "#ef4444"; // Red (Heavy)
-      if (b <= 5) return "#f59e0b"; // Orange/Yellow (Moderate)
-      return "#22c55e";             // Green (Free Flow)
+      if (b <= 3) return "#ef4444";
+      if (b <= 5) return "#f59e0b";
+      return "#22c55e";
     };
 
     // Draw the segments and color those that have a match with LTA
@@ -6507,9 +6507,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         const getBandTextColor = (b) => {
-          if (b <= 3) return "#ef4444"; // Red for Heavy
-          if (b <= 5) return "#f59e0b"; // Orange for Moderate
-          return "#22c55e";             // Green for Free Flow
+          if (b <= 3) return "#ef4444";
+          if (b <= 5) return "#f59e0b";
+          return "#22c55e";
         };
 
         let lastPinIndex = -999;
@@ -6517,7 +6517,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // Bind the Tooltip 
         line.bindPopup(`
               <div style="font-family: 'Inter', -apple-system, sans-serif; min-width: 220px; padding: 5px;">
-                <div style="font-weight: 800; font-size: 15px; color: #1e293b; letter-spacing: -0.01em;">${escapeHtml(matchData.road_name || "LTA Road")}</div>
+                <div style="font-weight: 800; font-size: 15px; color: #1e293b; letter-spacing: -0.01em;">
+                    ${escapeHtml(matchData.display_name || matchData.road_name || "LTA Road")}
+                </div>
                 <div style="color: #94a3b8; font-size: 10px; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.05em;">LINK ID: ${matchData.link_id}</div>
                 
                 <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; border-bottom: 1px solid #f1f5f9; padding-bottom: 4px;">
@@ -6554,6 +6556,38 @@ document.addEventListener("DOMContentLoaded", () => {
 
         line.addTo(state.habitRoutePolylineLayer);
         segments.push(line);
+
+        // Add hotspots
+        const intel = state.currentRouteIntel ? state.currentRouteIntel[matchData.link_id] : null;
+        if (intel && intel.is_hotspot) {
+          const midLat = (coords[j][0] + coords[j + 1][0]) / 2;
+          const midLon = (coords[j][1] + coords[j + 1][1]) / 2;
+
+          L.marker([midLat, midLon], {
+            icon: L.divIcon({
+              className: '',
+              html: `
+              <div style="
+                width: 10px; 
+                height: 10px; 
+                background-color: #ef4444; 
+                border: 1.5px solid white; 
+                border-radius: 50%; 
+                box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+              "></div>
+            `,
+              iconSize: [13, 13],
+              iconAnchor: [6, 6]
+            })
+          }).bindPopup(`
+            <div style="font-size:12px; font-family: sans-serif; min-width: 160px;">
+              <div style="margin-bottom:4px; font-weight: bold; color: #ef4444;">ACCIDENT HOTSPOT</div>
+              <div style="margin-bottom:6px; font-size:13px;">${matchData.road_name || "LTA Road"}</div>
+              <hr style="border:none; border-top:1px solid #eee; margin:8px 0;" />
+              <div style="display: flex; justify-content:space-between;"><span><b>Drive safely!</b></span> </div>
+            </div>
+          `).addTo(state.habitRoutePolylineLayer);
+        }
 
         // Try to add a popup if system predicts jam or massive speedband drop
         // Calculate band change
@@ -6629,6 +6663,35 @@ document.addEventListener("DOMContentLoaded", () => {
       const fg = L.featureGroup(segments);
       state.plannerMap.fitBounds(fg.getBounds(), { padding: [40, 40] });
     }
+    // Draw Incidents and Road Happenings
+    const routePoints = coords.map(c => L.latLng(c[0], c[1]))
+    const cleanIncidents = mapLiveIncidentsToRouteEvents(state.mapLiveIncidents || []);
+
+    cleanIncidents.forEach(incident => {
+      const incidentLoc = L.latLng(incident.lat, incident.lon);
+      const isOnRoute = routePoints.some(point => point.distanceTo(incidentLoc) < 100);
+      if (isOnRoute) {
+        L.marker([incident.lat, incident.lon], {
+          icon: L.divIcon({
+            className: 'route-obstacle-icon',
+            html: `<div style="font-size: 16px; background: white; border: 2px solid ${incident.color}; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">⚠️</div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          })
+        })
+          .bindPopup(`
+          <div style="font-family: sans-serif; min-width: 200px;">
+            <strong style="color: ${incident.color}; font-size: 14px;">⚠️ ${incident.label}</strong>
+            <div style="font-size: 12px; margin-top: 4px; color: #475569;">
+              ${incident.message || "Hazard reported on route."}
+            </div>
+            <div style="font-size: 11px; margin-top: 8px; color: #94a3b8; font-weight: bold;">
+              Est. Delay: ${incident.delayMin} mins
+            </div>
+          </div>
+        `).addTo(state.habitRoutePolylineLayer);
+      }
+    });
 
     state.habitRouteChatContext = {
       route_id: route_id,
@@ -6673,6 +6736,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     marker.segmentIndex = segmentIndex;
     marker.index = pinIndex;
+    marker.link_id = linkId;
 
     marker.bindPopup(`
         <div style="font-family: sans-serif; padding: 5px; min-width: 150px;">
@@ -7015,7 +7079,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Write the current loading status into the current jam popup
     const popupBtn = document.querySelector(".leaflet-popup-content button");
     if (popupBtn) {
-      popupBtn.innerText = "Analyzing Detour...";
+      popupBtn.innerText = "Finding Alternatives...";
       popupBtn.style.opacity = "0.7";
       popupBtn.style.pointerEvents = "none";
     }
@@ -7024,7 +7088,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const dest = coords[coords.length - 1];
     for (let idx = segmentIndex; idx >= 0; idx -= step) {
       // Find the anchor, the reroute point for the alternate route
-      const anchorIdx = Math.max(0, segmentIndex - 5);
+      const anchorIdx = Math.max(0, segmentIndex - 10);
       const anchor = coords[anchorIdx];
       if (!anchor) {
         console.log("No anchor")
@@ -7062,7 +7126,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const rerouteSuffix = best.plain_coords || best.coords.map(p => [p.lat, p.lon]);
 
         // New complete alternate path
-        const prefix = coords.slice(0, idx + 1);
+        const prefix = coords.slice(0, anchorIdx + 1);
         const mergedCoords = prefix.concat(rerouteSuffix.slice(1));
 
         // Call the analyze endpoint
@@ -7151,7 +7215,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       coreLine.addTo(state.previewDetourLayer);
 
-      state.plannerMap.fitBounds(state.previewDetourLayer.getBounds(), { padding: [50, 50] });
+      // state.plannerMap.fitBounds(state.previewDetourLayer.getBounds(), { padding: [50, 50] });
     }
   }
 
@@ -7400,7 +7464,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const bounds = [];
 
     (data.segments || []).forEach(seg => {
-      const color = speedBandToColor(seg.sector_avg_speed);
+      const linkSpeed = seg.predicted_val || 8;
+      const color = speedBandToColor(linkSpeed);
       const latlngs = [seg.start, seg.end];
 
       bounds.push(seg.start, seg.end);
@@ -7413,10 +7478,31 @@ document.addEventListener("DOMContentLoaded", () => {
         .bindPopup(
           `<strong>${data.code}</strong><br>` +
           `Sector: ${seg.sector}<br>` +
-          `Sector Avg SpeedBand: ${seg.sector_avg_speed ?? "N/A"}<br>` +
+          `Sector Avg SpeedBand: ${linkSpeed}<br>` +
           `Link ID: ${seg.link_id}`
         )
         .addTo(state.expresswayLayerGroup);
+    });
+
+    (data.landmarks || []).forEach(vms => {
+      const dot = L.circleMarker([vms.lat, vms.lon], {
+        radius: 4,
+        fillColor: "#1e3a8a",
+        color: "#fff",
+        weight: 1,
+        opacity: 1,
+        fillOpacity: 0.9
+      });
+
+
+      dot.bindTooltip(vms.label, {
+        permanent: true,
+        direction: 'right',
+        className: 'vms-clean-label',
+        offset: [5, 0]
+      });
+
+      dot.addTo(state.expresswayLayerGroup);
     });
 
     if (bounds.length) {
@@ -8124,6 +8210,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.activeRoutePins = [];
     state.habitRouteJams = {};
 
+
     let coords = route.coords;
     // Grab the currently selected match info
     let matchInfo = state.currMatchInfo || state.currSelectedRoute.match_info
@@ -8210,7 +8297,11 @@ document.addEventListener("DOMContentLoaded", () => {
               accumulatedMins = 0;
               const freshMatches = freshData.match_info.segment_matches;
 
-              state.currMatchInfo.segment_matches.splice(currentIndex, freshMatches.length, ...freshMatches);
+              state.currMatchInfo.segment_matches = [
+                ...state.currMatchInfo.segment_matches.slice(0, currentIndex),
+                ...freshMatches
+              ];
+              // state.currMatchInfo.segment_matches.splice(currentIndex, freshMatches.length, ...freshMatches);
 
               updateColorsAhead(currentCoords, state.currMatchInfo.segment_matches, currentIndex);
             }
@@ -8259,7 +8350,7 @@ document.addEventListener("DOMContentLoaded", () => {
           state.habitRoutePinLayer.removeLayer(layer);
           state.activeRoutePins = state.activeRoutePins.filter(j => j !== layer.segmentIndex);
 
-          delete state.habitRouteJams[`jam-pin-${layer.segmentIndex}`];
+          delete state.habitRouteJams[`jam-pin-${layer.link_id}`];
 
         }
       })
@@ -8283,6 +8374,42 @@ document.addEventListener("DOMContentLoaded", () => {
       currentRoadName = segmentMatches[currentIndex].road_name;
     }
 
+    let currentHazard = null;
+
+    for (let offset of [0, -1, 1, -2, 2]) {
+      const idx = currentIndex + offset;
+      const currentMatch = segmentMatches[idx];
+      if (!currentMatch || !currentMatch.prediction) continue;
+
+      const cp = currentMatch.prediction;
+      const cIntel = state.currentRouteIntel ? state.currentRouteIntel[currentMatch.link_id] : null;
+
+      const currentVal = parseInt(cp.current_val);
+      const predictedVal = parseInt(cp.predicted_val);
+      const bandChange = currentVal - predictedVal;
+
+      const isCurrentJam = predictedVal <= 2;
+      const isCurrentSlowdown = currentVal >= 6 && bandChange >= 2;
+
+      if (cIntel?.incident_type) {
+        currentHazard = { label: cIntel.incident_type.toUpperCase(), type: 'red' };
+        break;
+      } else if (cIntel?.is_hotspot) {
+        currentHazard = { label: "HOTSPOT ZONE", type: 'red' };
+        break;
+      } else if (isCurrentJam) {
+        currentHazard = { label: "JAMMED", type: 'orange' };
+        break;
+      } else if (isCurrentSlowdown) {
+        currentHazard = { label: "SLOWDOWN", type: 'orange' };
+        break;
+      } else if (cIntel?.is_raining) {
+        currentHazard = { label: "RAIN AREA", type: 'blue' };
+        break;
+      }
+    }
+
+    let horizonDrawn = false;
     // Loop through all coordinates to redraw the path
     for (let j = 0; j < coords.length - 1; j++) {
       let line;
@@ -8300,18 +8427,89 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
         const dist = getDistanceKm(coords[j], coords[j + 1]);
+        const p = (matchData && matchData.prediction) ? matchData.prediction : null;
+
+        let effectiveBand = 5;
+        let isForecast = false;
+
+        if (p) {
+          if (minsAheadAccumulator <= 15) {
+            effectiveBand = parseInt(p.current_val);
+            isForecast = false;
+          }
+          else {
+            effectiveBand = parseInt(p.predicted_val);
+            isForecast = true;
+          }
+        }
+
         const band = (matchData && matchData.prediction) ? matchData.prediction.current_val : 5;
-        const speed = BAND_TO_KMH[band] || 45;
+        const speed = BAND_TO_KMH[effectiveBand] || 45;
         minsAheadAccumulator += (dist / speed) * 60
         distAheadAccumulator += dist;
 
 
-        if (minsAheadAccumulator <= 60 && matchData && matchData.prediction) {
+        // Draw horizon divider
+        if (minsAheadAccumulator > 15 && !horizonDrawn) {
+            L.marker([coords[j][0], coords[j][1]], {
+                interactive: false, // Let clicks pass through to the road
+                icon: L.divIcon({
+                    className: 'horizon-divider-pin',
+                    html: `
+                        <div style="
+                            display: flex; 
+                            align-items: center; 
+                            transform: translate(-50%, -50%);
+                        ">
+                            <div style="width: 20px; height: 2px; background: #94a3b8;"></div>
+                            <div style="
+                                background: #1e293b; 
+                                color: #fff; 
+                                padding: 2px 8px; 
+                                font-size: 9px; 
+                                font-weight: 800; 
+                                font-family: sans-serif;
+                                border-radius: 12px; 
+                                white-space: nowrap; 
+                                border: 1px solid #94a3b8; 
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+                                margin: 0 4px;
+                            ">
+                                ⏱️ T+15 FORECAST
+                            </div>
+                            <div style="width: 20px; height: 2px; background: #94a3b8;"></div>
+                        </div>
+                    `,
+                    iconSize: [0, 0]
+                })
+            }).addTo(state.habitRoutePolylineLayer);
+            
+            horizonDrawn = true; 
+        }
+
+        if (minsAheadAccumulator <= 60 && p) {
           const linkId = matchData.link_id;
           const intel = state.currentRouteIntel ? state.currentRouteIntel[segmentMatches[j].link_id] : null;
-          const p = matchData.prediction;
-          let isJam = (parseInt(p.predicted_val) <= 3);
-          let isSlowdown = (parseInt(p.current_val) - parseInt(p.predicted_val) >= 2);
+          
+          const currentVal = parseInt(p.current_val);
+          const predictedVal = parseInt(p.predicted_val);
+          const bandChange = currentVal - predictedVal;
+          let isJam = (parseInt(effectiveBand) <= 2);
+          let isSlowdown = currentVal >= 6 && bandChange >= 2;
+
+          // Draw the incidents and hotspots
+          if (intel && intel.is_hotspot) {
+            const mid = [(coords[j][0] + coords[j + 1][0]) / 2, (coords[j][1] + coords[j + 1][1]) / 2]
+            L.marker(mid, {
+              icon: L.divIcon({
+                html: `<div style="width:10px; height:10px; background:#ef4444; border:1.5px solid white; border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,0.5);"></div>`,
+                className: '',
+                iconSize: [10, 10],
+                iconAnchor: [5, 5]
+              })
+            }).bindPopup("<b>Incident Hotspot</b><br>High frequency of reports here, drive safely!")
+              .addTo(state.habitRoutePolylineLayer);
+          }
 
           let category = null;
           if (intel?.incident_type) category = 'incident';
@@ -8362,10 +8560,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
           // Draw the colored predictive line
           line = L.polyline([coords[j], coords[j + 1]], {
-            color: getBandColor(matchData.prediction.predicted_val),
+            color: getBandColor(effectiveBand),
             weight: 8,
             opacity: 1
           });
+
+          const horizonLabel = isForecast ? "T+15 Forecast" : "Current";
 
           // Re-bind the popup so you can still click segments during simulation
           line.bindPopup(`
@@ -8373,7 +8573,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <b>${matchData.road_name || "LTA Road"}</b><br>
             <span style="color: #64748b; font-size: 10px;">Reached in approx ${Math.round(minsAheadAccumulator)} mins</span>
             <hr style="margin: 8px 0; border: 0; border-top: 1px solid #eee;">
-            Prediction: <b style="color:${getBandColor(p.predicted_val)}">Band ${p.predicted_val}</b>
+            ${horizonLabel}: <b style="color:${getBandColor(effectiveBand)}">Band ${effectiveBand}</b>
           </div>
           `);
 
@@ -8421,7 +8621,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     // Loop ends
 
-    updateHUD(allAlerts, currentRoadName);
+    // Draw Incidents
+    const routePoints = coords.map(c => L.latLng(c[0], c[1]));
+
+    const cleanIncidents = mapLiveIncidentsToRouteEvents(state.mapLiveIncidents || []);
+    cleanIncidents.forEach(inc => {
+      const incLoc = L.latLng(inc.lat, inc.lon);
+      const isOnRoute = routePoints.some(p => p.distanceTo(incLoc) < 200);
+
+      if (isOnRoute) {
+        L.marker([inc.lat, inc.lon], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div style="font-size:16px; background:white; border:2px solid ${inc.color}; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.3);">⚠️</div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          })
+        }).bindPopup(`<b>${inc.label}</b><br>${inc.message}`)
+          .addTo(state.habitRoutePolylineLayer);
+      }
+    })
+
+    updateHUD(allAlerts, currentRoadName, currentHazard);
 
   }
 
@@ -8450,8 +8671,8 @@ document.addEventListener("DOMContentLoaded", () => {
       state.habitRoutePolylineLayer.clearLayers();
     }
 
-    if (state.habitPinLayer) {
-      state.habitPinLayer.clearLayers();
+    if (state.habitRoutePinLayer) {
+      state.habitRoutePinLayer.clearLayers();
     }
 
     const btn = document.getElementById('sim-control-btn');
@@ -8474,15 +8695,26 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
   // Update the FAST Sentinel panel
-  function updateHUD(allAlerts, currentRoad) {
+  function updateHUD(allAlerts, currentRoad, currentHazard) {
     const dot = document.getElementById('hud-dot');
     const body = document.getElementById('hud-body');
 
-    const headerHtml = `
-      <div style="font-size: 10px; color: #94a3b8; margin-bottom: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid #f8fafc; padding-bottom: 6px;">
-        ${currentRoad}
+    let headerHtml = `
+      <div style="font-size: 10px; margin-bottom: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; border-bottom: 1px solid #f8fafc; padding-bottom: 6px;">
+        Currently on: ${currentRoad}
       </div>
     `;
+
+    if (currentHazard) {
+      const color = currentHazard.type === 'red' ? '#ef4444' : '#f59e0b';
+      headerHtml += `
+            <div style="font-size: 12px; font-weight: 800; color: ${color}; margin-top: 2px; display: flex; align-items: center; gap: 4px;">
+                ⚠️ ${currentHazard.label}
+            </div>
+        `;
+    }
+
+    headerHtml += `<hr style="border: 0; border-top: 1px solid #f1f5f9; margin-bottom: 12px;">`;
 
     let html = headerHtml;
 
